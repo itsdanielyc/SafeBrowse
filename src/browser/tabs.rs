@@ -171,13 +171,14 @@ impl TabManager {
         }
     }
 
-    /// Updates the URL, title, and security state for a tab.
+    /// Updates the URL, title, and security state for a tab, setting its kind to Web.
     pub fn update_tab(&mut self, id: usize, url: String, title: String) {
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
             tab.is_secure = url.starts_with("https://");
             tab.url = url;
             tab.title = title;
             tab.is_loading = false;
+            tab.kind = TabKind::Web;
         }
     }
 }

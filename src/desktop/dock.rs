@@ -8,16 +8,19 @@
 //! - Clicking the dock window or pressing Ctrl+Alt+D switches display back to SafeBrowseDesktop
 //! - Automatically terminates and cleans up when the worker browser process exits
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::platform::windows::WindowExtWindows;
 use tao::window::WindowBuilder;
-use windows::Win32::Foundation::{HANDLE, HWND};
+use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetExitCodeProcess;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, WNDPROC,
+};
 use wry::{WebContext, WebViewBuilder};
 
 use crate::desktop::DesktopManager;
@@ -26,6 +29,49 @@ use crate::ui::assets::generate_dock_companion_html;
 
 /// Win32 process exit code indicating the process is still running.
 const STILL_ACTIVE: u32 = 259;
+
+/// Atomic storage holding previous window procedure pointer.
+static DOCK_PREV_WNDPROC: AtomicIsize = AtomicIsize::new(0);
+
+/// Global proxy for dispatching events from Win32 messages.
+static DOCK_PROXY: Mutex<Option<EventLoopProxy<String>>> = Mutex::new(None);
+
+/// Subclassed Win32 window procedure that intercepts `WM_HOTKEY` (Ctrl+Alt+D) and `WM_SYSCOMMAND` (SC_RESTORE).
+unsafe extern "system" fn dock_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    const WM_HOTKEY: u32 = 0x0312;
+    const WM_SYSCOMMAND: u32 = 0x0112;
+    const SC_RESTORE: usize = 0xF120;
+
+    if msg == WM_HOTKEY {
+        if wparam.0 == crate::security::HOTKEY_SWITCH_DESKTOP_ID as usize {
+            if let Ok(guard) = DOCK_PROXY.lock() {
+                if let Some(ref p) = *guard {
+                    let _ = p.send_event("{\"type\": \"SWITCH_TO_SAFE_DESKTOP\"}".to_string());
+                }
+            }
+            return LRESULT(0);
+        }
+    } else if msg == WM_SYSCOMMAND && (wparam.0 & 0xFFF0) == SC_RESTORE {
+        if let Ok(guard) = DOCK_PROXY.lock() {
+            if let Some(ref p) = *guard {
+                let _ = p.send_event("{\"type\": \"SWITCH_TO_SAFE_DESKTOP\"}".to_string());
+            }
+        }
+    }
+
+    let prev = DOCK_PREV_WNDPROC.load(Ordering::SeqCst);
+    if prev != 0 {
+        let prev_fn: WNDPROC = std::mem::transmute(prev);
+        CallWindowProcW(prev_fn, hwnd, msg, wparam, lparam)
+    } else {
+        windows::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
 
 /// Runs the companion dock window on the Default desktop to maintain taskbar presence
 /// and handle re-entry to the secure desktop.
@@ -53,6 +99,20 @@ pub fn run_default_desktop_dock(
     let _ = hotkey_interceptor.register_desktop_toggle_hotkey();
 
     let proxy = event_loop.create_proxy();
+    if let Ok(mut guard) = DOCK_PROXY.lock() {
+        *guard = Some(proxy.clone());
+    }
+
+    // Install subclassing wndproc
+    unsafe {
+        let prev = SetWindowLongPtrW(
+            hwnd,
+            GWLP_WNDPROC,
+            dock_wndproc as *const () as isize,
+        );
+        DOCK_PREV_WNDPROC.store(prev, Ordering::SeqCst);
+    }
+
     let is_running = Arc::new(AtomicBool::new(true));
     let is_running_clone = Arc::clone(&is_running);
 
@@ -118,15 +178,6 @@ pub fn run_default_desktop_dock(
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                // Clicking close on the companion dialog switches back or asks to terminate
-                let _ = desktop_manager.switch_to_safe_desktop();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Focused(true),
-                ..
-            } => {
-                // When the user clicks the taskbar dock item, window is focused:
-                // switch display straight back to SafeBrowseDesktop!
                 let _ = desktop_manager.switch_to_safe_desktop();
             }
             _ => {}

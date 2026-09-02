@@ -2,4 +2,4 @@
 
 pub mod store;
 
-pub use store::{BookmarkCategory, BookmarkStore};
+pub use store::{Bookmark, BookmarkCategory, BookmarkStore};

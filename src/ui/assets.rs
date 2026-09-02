@@ -1,353 +1,666 @@
 //! Embedded Assets & UI Shell for SafeBrowse
 //!
-//! Provides the hardened top chrome bar, omnibox, tab manager,
-//! quick bookmarks bar, and floating secure virtual keyboard.
+//! Provides the Bitdefender SafePay-inspired visual interface:
+//! - Full-Screen Desktop Shell (wave wallpaper, bottom taskbar with "Switch to Desktop" and system status)
+//! - Browser Window Chrome (custom title bar, tab strip with "+" and Bookmarks/Settings, omnibox)
+//! - Bookmarks Page (matching SafePay screenshot 3)
+//! - Settings Page (matching SafePay screenshot 4)
+//! - Secure Floating Virtual Keyboard (with key scrambling and DOM injection)
+//! - Default Desktop Companion Dock Window (matching SafePay screenshot 1)
 
-/// Generates the HTML, CSS, and JS injection script that wraps or overlays the browser view.
-pub fn generate_kiosk_shell_html(initial_url: &str) -> String {
-    format!(
-        r#"<!DOCTYPE html>
+use crate::bookmarks::Bookmark;
+use crate::browser::tabs::TabItem;
+
+/// Generates the HTML for the full-screen desktop shell taking over SafeBrowseDesktop.
+/// Matches Bitdefender SafePay desktop layout (screenshot 2):
+/// - Deep blue midnight wallpaper with luminous cyan wave curves
+/// - Bottom taskbar with `[🖥️ Switch to Desktop]`, middle running app item, and right system tray status.
+pub fn generate_desktop_shell_html() -> String {
+    r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SafeBrowse - Secure Isolated Desktop</title>
+<title>SafeBrowse Desktop Shell</title>
 <style>
-    :root {{
-        --bg-dark: #12141a;
-        --bg-surface: #1a1d26;
-        --bg-hover: #262b38;
-        --accent-green: #00e676;
-        --accent-blue: #2979ff;
-        --accent-red: #ff1744;
-        --text-primary: #f0f4f8;
-        --text-secondary: #94a3b8;
-        --border-color: #2e3646;
-    }}
-    * {{
-        box-sizing: border-box;
+    * {
         margin: 0;
         padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }
+    html, body {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background: #050a16;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: #f1f5f9;
+    }
+    #wallpaper-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: calc(100% - 46px);
+        overflow: hidden;
+        background: radial-gradient(circle at 18% 40%, #0d1e3d 0%, #060b18 70%, #02050c 100%);
+    }
+    .wave-svg {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        opacity: 0.65;
+        pointer-events: none;
+    }
+    #bottom-taskbar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 46px;
+        background: rgba(12, 16, 26, 0.95);
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        z-index: 9999;
+        box-shadow: 0 -4px 16px rgba(0,0,0,0.6);
+    }
+    .taskbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .btn-switch-desktop {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(30, 41, 59, 0.85);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.5);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .btn-switch-desktop:hover {
+        background: #38bdf8;
+        color: #0b1120;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+        transform: translateY(-1px);
+    }
+    .btn-switch-desktop:active {
+        transform: translateY(0);
+    }
+    .taskbar-center {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .task-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .task-item:hover {
+        background: rgba(255, 255, 255, 0.15);
+    }
+    .taskbar-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 12px;
+        color: #cbd5e1;
+    }
+    .status-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #38bdf8;
+    }
+    .pulse-shield {
+        color: #22c55e;
+        font-size: 14px;
+    }
+    .separator {
+        color: rgba(255, 255, 255, 0.2);
+    }
+</style>
+</head>
+<body>
+
+<div id="wallpaper-container">
+    <svg class="wave-svg" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+        <defs>
+            <linearGradient id="waveGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00d2ff" stop-opacity="0.6"/>
+                <stop offset="50%" stop-color="#0066cc" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#001a4d" stop-opacity="0.05"/>
+            </linearGradient>
+            <linearGradient id="arcGlow" x1="0%" y1="50%" x2="100%" y2="50%">
+                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="#1e40af" stop-opacity="0.1"/>
+            </linearGradient>
+        </defs>
+        <path d="M -200,600 Q 400,-100 1200,300 T 2200,100" fill="none" stroke="url(#waveGlow)" stroke-width="2.5" />
+        <path d="M -200,650 Q 450,-50 1250,350 T 2200,150" fill="none" stroke="url(#waveGlow)" stroke-width="1.8" />
+        <path d="M -200,700 Q 500,0 1300,400 T 2200,200" fill="none" stroke="url(#waveGlow)" stroke-width="2.2" />
+        <path d="M -200,750 Q 550,50 1350,450 T 2200,250" fill="none" stroke="url(#waveGlow)" stroke-width="1.5" />
+        <path d="M -200,800 Q 600,100 1400,500 T 2200,300" fill="none" stroke="url(#waveGlow)" stroke-width="2.0" />
+        <path d="M -200,850 Q 650,150 1450,550 T 2200,350" fill="none" stroke="url(#waveGlow)" stroke-width="1.2" />
+        <path d="M -200,900 Q 700,200 1500,600 T 2200,400" fill="none" stroke="url(#arcGlow)" stroke-width="3" />
+        <path d="M -200,950 Q 750,250 1550,650 T 2200,450" fill="none" stroke="url(#waveGlow)" stroke-width="1.4" />
+        <path d="M -200,1000 Q 800,300 1600,700 T 2200,500" fill="none" stroke="url(#waveGlow)" stroke-width="2.0" />
+    </svg>
+</div>
+
+<div id="bottom-taskbar">
+    <div class="taskbar-left">
+        <button class="btn-switch-desktop" onclick="handleSwitchDesktop()">
+            <span>🖥️</span>
+            <span>Switch to Desktop</span>
+        </button>
+    </div>
+
+    <div class="taskbar-center">
+        <div class="task-item" onclick="handleFocusBrowser()">
+            <span>🛡️</span>
+            <span>Bitdefender SAFEPAY™</span>
+        </div>
+    </div>
+
+    <div class="taskbar-right">
+        <span>Default printer: <strong>Microsoft Print to PDF</strong></span>
+        <span class="separator">|</span>
+        <span class="status-badge">
+            <span class="pulse-shield">🛡️</span>
+            <span>SafeBrowse Protected</span>
+        </span>
+        <span class="separator">|</span>
+        <span>EN</span>
+        <span class="separator">|</span>
+        <span id="live-clock">--:-- --/--/----</span>
+    </div>
+</div>
+
+<script>
+    function updateClock() {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes());
+        const dateStr = pad(now.getDate()) + '/' + pad(now.getMonth() + 1) + '/' + now.getFullYear();
+        document.getElementById('live-clock').textContent = dateStr + ' ' + timeStr;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    function postIpc(msg) {
+        if (window.ipc && window.ipc.postMessage) {
+            window.ipc.postMessage(JSON.stringify(msg));
+        }
+    }
+
+    function handleSwitchDesktop() {
+        postIpc({ type: 'SWITCH_DESKTOP' });
+    }
+
+    function handleFocusBrowser() {
+        postIpc({ type: 'FOCUS_BROWSER' });
+    }
+</script>
+</body>
+</html>"##
+    .to_string()
+}
+
+/// Generates the HTML for the top chrome of the floating browser window.
+/// Matches Bitdefender SafePay browser window chrome (screenshot 2):
+/// - Dark titlebar with shield icon, title, and minimize/maximize/close buttons.
+/// - Tab strip with active tab in white rounded style, inactive tabs in dark style, "+" button, Bookmarks & Settings.
+/// - Navigation bar with Back, Forward, Reload, URL Omnibox, Virtual Keyboard toggle, and Bookmark action.
+pub fn generate_browser_chrome_html(tabs: &[TabItem], active_id: usize) -> String {
+    let tabs_json = serde_json::to_string(tabs).unwrap_or_else(|_| "[]".to_string());
+    let active_tab = tabs.iter().find(|t| t.id == active_id).or_else(|| tabs.first());
+    let initial_url = active_tab.map(|t| t.url.as_str()).unwrap_or("https://duckduckgo.com");
+
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeBrowse Chrome</title>
+<style>
+    :root {{
+        --titlebar-bg: #151821;
+        --tabstrip-bg: #151821;
+        --tab-inactive-bg: #212534;
+        --tab-inactive-text: #94a3b8;
+        --tab-active-bg: #ffffff;
+        --tab-active-text: #0f172a;
+        --navbar-bg: #ffffff;
+        --border-color: #cbd5e1;
+        --btn-hover: #e2e8f0;
+        --accent-blue: #0284c7;
+        --accent-red: #ef4444;
+    }}
+    * {{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
         user-select: none;
     }}
-    body, html {{
+    html, body {{
         width: 100%;
         height: 100%;
         overflow: hidden;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background: var(--bg-dark);
-        color: var(--text-primary);
+        background: var(--titlebar-bg);
         display: flex;
         flex-direction: column;
     }}
-    #topbar {{
-        background: var(--bg-surface);
-        border-bottom: 2px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        z-index: 1000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    }}
-    .status-row {{
+
+    /* Row 1: Title Bar */
+    #titlebar {{
+        height: 32px;
+        background: var(--titlebar-bg);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 6px 16px;
-        background: #0f1117;
+        padding: 0 4px 0 12px;
+        color: #f1f5f9;
         font-size: 12px;
-        border-bottom: 1px solid var(--border-color);
+        font-weight: 600;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        cursor: grab;
     }}
-    .security-badge {{
+    .title-left {{
         display: flex;
         align-items: center;
         gap: 8px;
-        color: var(--accent-green);
-        font-weight: 700;
-        letter-spacing: 0.5px;
+        pointer-events: none;
     }}
-    .pulse-dot {{
-        width: 8px;
-        height: 8px;
-        background: var(--accent-green);
-        border-radius: 50%;
-        box-shadow: 0 0 8px var(--accent-green);
-        animation: pulse 2s infinite;
+    .title-shield {{
+        color: #ef4444;
+        font-size: 14px;
     }}
-    @keyframes pulse {{
-        0% {{ opacity: 0.4; }}
-        50% {{ opacity: 1; }}
-        100% {{ opacity: 0.4; }}
-    }}
-    .desktop-actions {{
+    .window-controls {{
         display: flex;
         align-items: center;
-        gap: 10px;
+        cursor: default;
     }}
-    .btn-switch-desktop {{
-        background: #1e293b;
-        color: #38bdf8;
-        border: 1px solid #38bdf8;
-        padding: 4px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 11px;
-        transition: all 0.2s;
-    }}
-    .btn-switch-desktop:hover {{
-        background: #38bdf8;
-        color: #0f172a;
-    }}
-    .btn-exit {{
-        background: #3f1d24;
-        color: var(--accent-red);
-        border: 1px solid var(--accent-red);
-        padding: 4px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 11px;
-        transition: all 0.2s;
-    }}
-    .btn-exit:hover {{
-        background: var(--accent-red);
-        color: #fff;
-    }}
-    .nav-row {{
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 16px;
-    }}
-    .nav-btn {{
-        background: var(--bg-hover);
-        color: var(--text-primary);
-        border: 1px solid var(--border-color);
-        width: 34px;
-        height: 34px;
-        border-radius: 6px;
+    .win-btn {{
+        width: 44px;
+        height: 32px;
+        background: transparent;
+        border: none;
+        color: #cbd5e1;
+        font-size: 13px;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        font-size: 15px;
-        transition: background 0.15s;
+        transition: background 0.1s;
+    }}
+    .win-btn:hover {{
+        background: rgba(255, 255, 255, 0.1);
+    }}
+    .win-btn.close:hover {{
+        background: #e81123;
+        color: #fff;
+    }}
+
+    /* Row 2: Tab Strip */
+    #tabstrip {{
+        height: 38px;
+        background: var(--tabstrip-bg);
+        display: flex;
+        align-items: flex-end;
+        padding: 0 8px;
+        gap: 4px;
+        overflow-x: auto;
+    }}
+    #tabstrip::-webkit-scrollbar {{ display: none; }}
+    .tab {{
+        height: 34px;
+        min-width: 120px;
+        max-width: 220px;
+        padding: 0 12px;
+        border-radius: 6px 6px 0 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.15s;
+    }}
+    .tab.inactive {{
+        background: var(--tab-inactive-bg);
+        color: var(--tab-inactive-text);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-bottom: none;
+    }}
+    .tab.inactive:hover {{
+        background: #2a3042;
+        color: #f1f5f9;
+    }}
+    .tab.active {{
+        background: var(--tab-active-bg);
+        color: var(--tab-active-text);
+        font-weight: 600;
+        box-shadow: 0 -2px 6px rgba(0,0,0,0.15);
+    }}
+    .tab-title {{
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+    }}
+    .tab-close {{
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: inherit;
+        opacity: 0.6;
+        cursor: pointer;
+    }}
+    .tab-close:hover {{
+        opacity: 1;
+        background: rgba(0, 0, 0, 0.15);
+    }}
+    .btn-new-tab {{
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        border: none;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 3px;
+    }}
+    .btn-new-tab:hover {{
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+    }}
+    .special-tabs {{
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: auto;
+        margin-bottom: 3px;
+    }}
+    .btn-special-tab {{
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        color: #cbd5e1;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+    }}
+    .btn-special-tab:hover {{
+        background: rgba(255,255,255,0.2);
+        color: #fff;
+    }}
+    .btn-special-tab.active {{
+        background: #38bdf8;
+        color: #0f172a;
+        border-color: #38bdf8;
+    }}
+
+    /* Row 3: Navigation Bar */
+    #navbar {{
+        height: 38px;
+        background: var(--navbar-bg);
+        border-top: 1px solid #e2e8f0;
+        border-bottom: 1px solid #cbd5e1;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        gap: 6px;
+    }}
+    .nav-btn {{
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: #334155;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s;
     }}
     .nav-btn:hover {{
-        background: #333a4d;
+        background: var(--btn-hover);
+        border-color: #cbd5e1;
     }}
-    .nav-btn:active {{
-        transform: scale(0.95);
-    }}
-    .omnibox-container {{
+    .omnibox-wrapper {{
         flex: 1;
         display: flex;
         align-items: center;
-        background: #0b0d13;
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 16px;
         padding: 0 12px;
-        height: 36px;
-        transition: border-color 0.2s;
+        height: 28px;
+        transition: border-color 0.2s, box-shadow 0.2s;
     }}
-    .omnibox-container:focus-within {{
-        border-color: var(--accent-green);
-        box-shadow: 0 0 6px rgba(0,230,118,0.2);
+    .omnibox-wrapper:focus-within {{
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+        background: #ffffff;
     }}
     .lock-icon {{
-        color: var(--accent-green);
-        margin-right: 8px;
-        font-size: 14px;
+        font-size: 12px;
+        color: #10b981;
+        margin-right: 6px;
     }}
     #omnibox {{
         flex: 1;
-        background: transparent;
         border: none;
+        background: transparent;
         outline: none;
-        color: var(--text-primary);
-        font-size: 13px;
-    }}
-    .tool-btn {{
-        background: var(--bg-hover);
-        color: var(--text-primary);
-        border: 1px solid var(--border-color);
-        padding: 0 12px;
-        height: 34px;
-        border-radius: 6px;
-        cursor: pointer;
         font-size: 12px;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        transition: all 0.2s;
+        color: #0f172a;
     }}
-    .tool-btn:hover {{
-        background: #333a4d;
-    }}
-    .tool-btn.active {{
-        background: rgba(0, 230, 118, 0.15);
-        border-color: var(--accent-green);
-        color: var(--accent-green);
-    }}
-    #bookmark-bar {{
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 4px 16px;
-        background: #151821;
-        border-top: 1px solid rgba(255,255,255,0.05);
-        overflow-x: auto;
-        font-size: 12px;
-    }}
-    .bm-chip {{
-        background: var(--bg-surface);
-        padding: 4px 10px;
+    .action-btn {{
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
         border-radius: 4px;
-        border: 1px solid var(--border-color);
-        cursor: pointer;
-        white-space: nowrap;
+        height: 28px;
+        padding: 0 8px;
         display: flex;
         align-items: center;
-        gap: 6px;
-        color: var(--text-secondary);
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #334155;
+        cursor: pointer;
         transition: all 0.15s;
     }}
-    .bm-chip:hover {{
-        color: var(--text-primary);
-        border-color: #4a5568;
-        background: var(--bg-hover);
+    .action-btn:hover {{
+        background: #e2e8f0;
+        color: #0f172a;
     }}
-    #content-frame {{
-        flex: 1;
-        width: 100%;
-        border: none;
-        background: #fff;
+    .action-btn.active {{
+        background: #0284c7;
+        color: #ffffff;
+        border-color: #0284c7;
     }}
+
+    /* Virtual Keyboard Drawer */
     #osk-drawer {{
         position: fixed;
         bottom: 0;
         left: 50%;
         transform: translateX(-50%);
-        width: 780px;
-        background: #1a1d26;
-        border: 2px solid var(--border-color);
+        width: 760px;
+        background: #181b26;
+        border: 2px solid #2e3646;
         border-bottom: none;
-        border-radius: 12px 12px 0 0;
+        border-radius: 10px 10px 0 0;
         box-shadow: 0 -8px 24px rgba(0,0,0,0.6);
-        padding: 16px;
-        z-index: 2000;
+        padding: 12px;
+        z-index: 9999;
         display: none;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
     }}
     .osk-header {{
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 6px;
-    }}
-    .osk-title {{
-        font-size: 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        color: #38bdf8;
+        font-size: 11px;
         font-weight: 700;
-        color: var(--accent-green);
-        display: flex;
-        align-items: center;
-        gap: 6px;
     }}
     .osk-row {{
         display: flex;
-        gap: 6px;
+        gap: 5px;
         justify-content: center;
     }}
     .osk-key {{
-        background: #282e3f;
+        background: #262c3d;
         color: #fff;
-        border: 1px solid #3c465c;
-        border-radius: 6px;
-        min-width: 44px;
-        height: 42px;
+        border: 1px solid #3b455c;
+        border-radius: 4px;
+        min-width: 40px;
+        height: 36px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.1s;
     }}
     .osk-key:hover {{
-        background: #3a435b;
-        border-color: #556280;
+        background: #39425a;
+        border-color: #536282;
     }}
     .osk-key:active {{
-        background: var(--accent-green);
+        background: #38bdf8;
         color: #000;
-        transform: scale(0.95);
+        transform: scale(0.96);
     }}
-    .osk-key.wide {{ min-width: 70px; }}
-    .osk-key.extra-wide {{ min-width: 90px; }}
+    .osk-key.wide {{ min-width: 64px; }}
     .osk-key.space {{ flex: 1; }}
 </style>
 </head>
 <body>
 
-<div id="topbar">
-    <div class="status-row">
-        <div class="security-badge">
-            <div class="pulse-dot"></div>
-            <span>SAFEBROWSE ISOLATED DESKTOP</span>
-            <span style="color: #64748b; font-weight: normal;">| DWM Capture Excluded | User Hooks Blocked</span>
-        </div>
-        <div class="desktop-actions">
-            <button class="btn-switch-desktop" onclick="handleSwitchDesktop()">🖥️ Back to Windows Desktop (Ctrl+Alt+D)</button>
-            <button class="btn-exit" onclick="handleExit()">❌ Exit SafeBrowse</button>
-        </div>
+<div id="titlebar" onmousedown="handleTitlebarMouseDown(event)">
+    <div class="title-left">
+        <span class="title-shield">🛡️</span>
+        <span>Bitdefender SAFEPAY™</span>
     </div>
-    <div class="nav-row">
-        <button class="nav-btn" onclick="handleBack()" title="Back">⮜</button>
-        <button class="nav-btn" onclick="handleForward()" title="Forward">⮞</button>
-        <button class="nav-btn" onclick="handleReload()" title="Reload">⟳</button>
-        <button class="nav-btn" onclick="handleHome()" title="Home">🏠</button>
-        
-        <div class="omnibox-container">
-            <span class="lock-icon">🔒</span>
-            <input type="text" id="omnibox" value="{initial_url}" placeholder="Search securely or enter web address...">
-        </div>
-        
-        <button class="tool-btn" id="btn-osk" onclick="toggleOsk()">⌨️ Virtual Keyboard</button>
-        <button class="tool-btn" onclick="addCurrentBookmark()">⭐ Bookmark</button>
-    </div>
-    <div id="bookmark-bar">
-        <div class="bm-chip" onclick="navigateTo('https://duckduckgo.com')">🦆 DuckDuckGo</div>
-        <div class="bm-chip" onclick="navigateTo('https://www.paypal.com')">💳 PayPal</div>
-        <div class="bm-chip" onclick="navigateTo('https://dashboard.stripe.com')">⚡ Stripe</div>
-        <div class="bm-chip" onclick="navigateTo('https://www.chase.com')">🏦 Chase</div>
-        <div class="bm-chip" onclick="navigateTo('https://www.bankofamerica.com')">🏛️ Bank of America</div>
-        <div class="bm-chip" onclick="navigateTo('https://www.fidelity.com')">📈 Fidelity</div>
+    <div class="window-controls">
+        <button class="win-btn" onclick="handleMinimize()" title="Minimize">─</button>
+        <button class="win-btn" onclick="handleMaximize()" title="Maximize">□</button>
+        <button class="win-btn close" onclick="handleClose()" title="Close">✕</button>
     </div>
 </div>
 
-<iframe id="content-frame" src="{initial_url}"></iframe>
+<div id="tabstrip">
+    <div id="tabs-container" style="display: flex; gap: 4px;"></div>
+    <button class="btn-new-tab" onclick="handleNewTab()" title="New Tab">+</button>
 
-<!-- Floating Trusted Virtual Keyboard -->
+    <div class="special-tabs">
+        <button class="btn-special-tab" id="btn-tab-bookmarks" onclick="handleOpenBookmarks()">Bookmarks</button>
+        <button class="btn-special-tab" id="btn-tab-settings" onclick="handleOpenSettings()">Settings</button>
+    </div>
+</div>
+
+<div id="navbar">
+    <button class="nav-btn" onclick="handleBack()" title="Back">⮜</button>
+    <button class="nav-btn" onclick="handleForward()" title="Forward">⮞</button>
+    <button class="nav-btn" onclick="handleReload()" title="Reload">⟳</button>
+    
+    <div class="omnibox-wrapper">
+        <span class="lock-icon" id="lock-indicator">🔒</span>
+        <input type="text" id="omnibox" value="{initial_url}" placeholder="Search securely or type a web address...">
+    </div>
+
+    <button class="action-btn" id="btn-osk-toggle" onclick="toggleOsk()">
+        <span>⌨️</span>
+        <span>Virtual Keyboard</span>
+    </button>
+    <button class="action-btn" onclick="handleAddBookmark()" title="Bookmark this page">
+        <span>⭐</span>
+    </button>
+</div>
+
+<!-- Secure Virtual Keyboard Drawer -->
 <div id="osk-drawer">
     <div class="osk-header">
-        <div class="osk-title">🛡️ SECURE VIRTUAL KEYBOARD (Hook-Immune DOM Injection)</div>
-        <div style="display: flex; gap: 8px;">
-            <button class="btn-switch-desktop" onclick="scrambleKeys()">🎲 Scramble Keys</button>
-            <button class="btn-exit" onclick="toggleOsk()">✕ Close</button>
+        <span>🛡️ SECURE VIRTUAL KEYBOARD (Direct DOM Injection)</span>
+        <div style="display: flex; gap: 6px;">
+            <button style="padding: 2px 8px; font-size: 10px; cursor: pointer;" onclick="scrambleKeys()">🎲 Scramble Keys</button>
+            <button style="padding: 2px 8px; font-size: 10px; cursor: pointer;" onclick="toggleOsk()">✕ Close</button>
         </div>
     </div>
     <div id="osk-keys-container"></div>
 </div>
 
 <script>
+    let currentTabs = {tabs_json};
+    let activeTabId = {active_id};
     const omnibox = document.getElementById('omnibox');
-    const iframe = document.getElementById('content-frame');
+    const tabsContainer = document.getElementById('tabs-container');
     const oskDrawer = document.getElementById('osk-drawer');
-    const btnOsk = document.getElementById('btn-osk');
-
+    const btnOsk = document.getElementById('btn-osk-toggle');
     let isShifted = false;
+
+    function postIpc(msg) {{
+        if (window.ipc && window.ipc.postMessage) {{
+            window.ipc.postMessage(JSON.stringify(msg));
+        }}
+    }}
+
+    function handleTitlebarMouseDown(e) {{
+        if (e.target.closest('.window-controls')) return;
+        postIpc({{ type: 'START_DRAG' }});
+    }}
+
+    function handleMinimize() {{ postIpc({{ type: 'MINIMIZE' }}); }}
+    function handleMaximize() {{ postIpc({{ type: 'TOGGLE_MAXIMIZE' }}); }}
+    function handleClose() {{ postIpc({{ type: 'CLOSE_WINDOW' }}); }}
+
+    function handleBack() {{ postIpc({{ type: 'GO_BACK' }}); }}
+    function handleForward() {{ postIpc({{ type: 'GO_FORWARD' }}); }}
+    function handleReload() {{ postIpc({{ type: 'RELOAD' }}); }}
+    function handleNewTab() {{ postIpc({{ type: 'NEW_TAB' }}); }}
+    function handleOpenBookmarks() {{ postIpc({{ type: 'OPEN_BOOKMARKS' }}); }}
+    function handleOpenSettings() {{ postIpc({{ type: 'OPEN_SETTINGS' }}); }}
+    function handleAddBookmark() {{ postIpc({{ type: 'ADD_BOOKMARK' }}); }}
 
     omnibox.addEventListener('keydown', (e) => {{
         if (e.key === 'Enter') {{
@@ -359,68 +672,73 @@ pub fn generate_kiosk_shell_html(initial_url: &str) -> String {
                     target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
                 }}
             }}
-            navigateTo(target);
+            omnibox.value = target;
+            postIpc({{ type: 'NAVIGATE', url: target }});
         }}
     }});
 
-    function navigateTo(url) {{
-        omnibox.value = url;
-        iframe.src = url;
-        postIpc({{ type: 'NAVIGATE', url: url }});
-    }}
+    function renderTabs() {{
+        tabsContainer.innerHTML = '';
+        let isSpecialActive = false;
 
-    function handleBack() {{
-        try {{ iframe.contentWindow.history.back(); }} catch(e) {{}}
-        postIpc({{ type: 'GO_BACK' }});
-    }}
+        currentTabs.forEach(t => {{
+            const isTabActive = t.id === activeTabId;
+            const tabDiv = document.createElement('div');
+            tabDiv.className = 'tab ' + (isTabActive ? 'active' : 'inactive');
 
-    function handleForward() {{
-        try {{ iframe.contentWindow.history.forward(); }} catch(e) {{}}
-        postIpc({{ type: 'GO_FORWARD' }});
-    }}
+            let icon = '🌐';
+            if (t.kind === 'Bookmarks') {{ icon = '⭐'; if (isTabActive) isSpecialActive = true; }}
+            else if (t.kind === 'Settings') {{ icon = '⚙️'; if (isTabActive) isSpecialActive = true; }}
 
-    function handleReload() {{
-        try {{ iframe.contentWindow.location.reload(); }} catch(e) {{}}
-        postIpc({{ type: 'RELOAD' }});
-    }}
+            tabDiv.innerHTML = `
+                <span>${{icon}}</span>
+                <span class="tab-title">${{t.title || 'New Tab'}}</span>
+                <span class="tab-close" onclick="closeTab(event, ${{t.id}})">✕</span>
+            `;
 
-    function handleHome() {{
-        navigateTo('https://duckduckgo.com');
-    }}
+            tabDiv.onclick = (e) => {{
+                if (e.target.classList.contains('tab-close')) return;
+                postIpc({{ type: 'SWITCH_TAB', id: t.id }});
+            }};
 
-    function handleSwitchDesktop() {{
-        postIpc({{ type: 'SWITCH_DESKTOP' }});
-    }}
-
-    function handleExit() {{
-        postIpc({{ type: 'EXIT_APP' }});
-    }}
-
-    function toggleOsk() {{
-        const isVisible = oskDrawer.style.display === 'flex';
-        oskDrawer.style.display = isVisible ? 'none' : 'flex';
-        btnOsk.classList.toggle('active', !isVisible);
-        if (!isVisible) {{
-            renderOsk();
-        }}
-    }}
-
-    function addCurrentBookmark() {{
-        postIpc({{
-            type: 'ADD_BOOKMARK',
-            title: document.title || omnibox.value,
-            url: omnibox.value
+            tabsContainer.appendChild(tabDiv);
         }});
-        alert('Bookmark saved securely to persistent store!');
-    }}
 
-    function postIpc(msgObj) {{
-        if (window.ipc && window.ipc.postMessage) {{
-            window.ipc.postMessage(JSON.stringify(msgObj));
+        const activeObj = currentTabs.find(t => t.id === activeTabId);
+        if (activeObj) {{
+            omnibox.value = activeObj.url;
+            document.getElementById('lock-indicator').style.color = activeObj.is_secure ? '#10b981' : '#94a3b8';
         }}
+
+        document.getElementById('btn-tab-bookmarks').classList.toggle('active', activeObj && activeObj.kind === 'Bookmarks');
+        document.getElementById('btn-tab-settings').classList.toggle('active', activeObj && activeObj.kind === 'Settings');
     }}
 
-    // Virtual Keyboard Layout Definition
+    function closeTab(e, id) {{
+        e.stopPropagation();
+        postIpc({{ type: 'CLOSE_TAB', id: id }});
+    }}
+
+    window.updateTabs = function(tabs, activeId) {{
+        currentTabs = tabs;
+        activeTabId = activeId;
+        renderTabs();
+    }};
+
+    window.updateActiveTabUrlAndTitle = function(url, title) {{
+        const tab = currentTabs.find(t => t.id === activeTabId);
+        if (tab) {{
+            tab.url = url;
+            if (title) tab.title = title;
+            renderTabs();
+        }} else {{
+            omnibox.value = url;
+        }}
+    }};
+
+    renderTabs();
+
+    // Virtual Keyboard
     const defaultLayout = [
         ['1','2','3','4','5','6','7','8','9','0','-','=','BACKSPACE'],
         ['q','w','e','r','t','y','u','i','o','p','[',']','\\'],
@@ -428,92 +746,589 @@ pub fn generate_kiosk_shell_html(initial_url: &str) -> String {
         ['SHIFT','z','x','c','v','b','n','m',',','.','/','SHIFT'],
         ['SPACE']
     ];
-
     let currentLayout = JSON.parse(JSON.stringify(defaultLayout));
+
+    function toggleOsk() {{
+        const isVisible = oskDrawer.style.display === 'flex';
+        oskDrawer.style.display = isVisible ? 'none' : 'flex';
+        btnOsk.classList.toggle('active', !isVisible);
+        if (!isVisible) renderOsk();
+    }}
 
     function renderOsk() {{
         const container = document.getElementById('osk-keys-container');
         container.innerHTML = '';
-
-        currentLayout.forEach((row, rowIdx) => {{
+        currentLayout.forEach(row => {{
             const rowDiv = document.createElement('div');
             rowDiv.className = 'osk-row';
-
-            row.forEach(keyVal => {{
+            row.forEach(key => {{
                 const btn = document.createElement('div');
                 btn.className = 'osk-key';
-                
-                let displayVal = keyVal;
-                if (isShifted && displayVal.length === 1 && displayVal >= 'a' && displayVal <= 'z') {{
-                    displayVal = displayVal.toUpperCase();
+                let display = key;
+                if (isShifted && display.length === 1 && display >= 'a' && display <= 'z') {{
+                    display = display.toUpperCase();
                 }}
-
-                btn.textContent = displayVal;
-
-                if (keyVal === 'BACKSPACE' || keyVal === 'ENTER' || keyVal === 'CAPS' || keyVal === 'SHIFT') {{
-                    btn.classList.add('wide');
-                }} else if (keyVal === 'SPACE') {{
-                    btn.classList.add('space');
-                    btn.textContent = 'SPACE';
-                }}
-
-                btn.onclick = () => handleKeyClick(keyVal);
+                btn.textContent = display;
+                if (key === 'BACKSPACE' || key === 'ENTER' || key === 'CAPS' || key === 'SHIFT') btn.classList.add('wide');
+                else if (key === 'SPACE') {{ btn.classList.add('space'); btn.textContent = 'SPACE'; }}
+                btn.onclick = () => handleKeyClick(key);
                 rowDiv.appendChild(btn);
             }});
-
             container.appendChild(rowDiv);
         }});
     }}
 
-    function handleKeyClick(keyVal) {{
-        if (keyVal === 'SHIFT' || keyVal === 'CAPS') {{
+    function handleKeyClick(key) {{
+        if (key === 'SHIFT' || key === 'CAPS') {{
             isShifted = !isShifted;
             renderOsk();
             return;
         }}
-
-        let valueToDispatch = keyVal;
-        if (keyVal === 'SPACE') valueToDispatch = ' ';
-        else if (isShifted && keyVal.length === 1 && keyVal >= 'a' && keyVal <= 'z') {{
-            valueToDispatch = keyVal.toUpperCase();
-        }}
-
-        // Send via IPC directly to active document input in host webview
-        postIpc({{
-            type: 'KEY_INPUT',
-            action: valueToDispatch
-        }});
+        let val = key;
+        if (key === 'SPACE') val = ' ';
+        else if (isShifted && key.length === 1 && key >= 'a' && key <= 'z') val = key.toUpperCase();
+        postIpc({{ type: 'KEY_INPUT', action: val }});
     }}
 
     function scrambleKeys() {{
-        // Fisher-Yates shuffle on alpha keys for anti-mouse-logger defense
         const alphas = [];
-        defaultLayout.forEach(row => {{
-            row.forEach(k => {{
-                if (k.length === 1 && k >= 'a' && k <= 'z') alphas.push(k);
-            }});
-        }});
-
+        defaultLayout.forEach(row => row.forEach(k => {{
+            if (k.length === 1 && k >= 'a' && k <= 'z') alphas.push(k);
+        }}));
         for (let i = alphas.length - 1; i > 0; i--) {{
             const j = Math.floor(Math.random() * (i + 1));
             [alphas[i], alphas[j]] = [alphas[j], alphas[i]];
         }}
-
         let idx = 0;
-        currentLayout = defaultLayout.map(row => {{
-            return row.map(k => {{
-                if (k.length === 1 && k >= 'a' && k <= 'z') {{
-                    return alphas[idx++];
-                }}
-                return k;
-            }});
-        }});
-
+        currentLayout = defaultLayout.map(row => row.map(k => (k.length === 1 && k >= 'a' && k <= 'z') ? alphas[idx++] : k));
         renderOsk();
     }}
 </script>
 </body>
-</html>"#,
-        initial_url = initial_url
+</html>"##,
+        initial_url = initial_url,
+        tabs_json = tabs_json,
+        active_id = active_id
     )
+}
+
+/// Generates the HTML for the Bookmarks screen matching SafePay screenshot 3.
+/// Displays large "Bookmarks" header, "+ " tile, and responsive tiles for bookmarked sites.
+pub fn generate_bookmarks_page_html(bookmarks: &[Bookmark]) -> String {
+    let mut tiles_html = String::new();
+
+    // Default bookmark card tiles if empty or alongside user bookmarks
+    for b in bookmarks {
+        let domain = url::Url::parse(&b.url)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| b.url.clone());
+
+        tiles_html.push_str(&format!(
+            r##"<div class="bm-card" onclick="openBookmark('{url}')">
+                <div class="bm-icon-circle">🌐</div>
+                <div class="bm-card-title">{title}</div>
+                <div class="bm-card-domain">{domain}</div>
+            </div>"##,
+            url = b.url,
+            title = b.title,
+            domain = domain
+        ));
+    }
+
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bookmarks</title>
+<style>
+    * {{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }}
+    body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: #f8fafc;
+        color: #1e293b;
+        padding: 48px 64px;
+    }}
+    h1 {{
+        font-size: 32px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 8px;
+    }}
+    .subtitle {{
+        font-size: 15px;
+        color: #64748b;
+        margin-bottom: 40px;
+    }}
+    .grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 24px;
+    }}
+    .add-tile {{
+        height: 140px;
+        background: #e2e8f0;
+        border: 2px dashed #94a3b8;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 36px;
+        color: #475569;
+    }}
+    .add-tile:hover {{
+        background: #cbd5e1;
+        border-color: #0284c7;
+        color: #0284c7;
+        transform: translateY(-2px);
+    }}
+    .add-label {{
+        font-size: 12px;
+        font-weight: 600;
+        margin-top: 6px;
+    }}
+    .bm-card {{
+        height: 140px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        cursor: pointer;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        transition: all 0.2s;
+    }}
+    .bm-card:hover {{
+        border-color: #0284c7;
+        box-shadow: 0 6px 16px rgba(2, 132, 199, 0.12);
+        transform: translateY(-3px);
+    }}
+    .bm-icon-circle {{
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        margin-bottom: 12px;
+    }}
+    .bm-card-title {{
+        font-size: 13px;
+        font-weight: 600;
+        color: #0f172a;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }}
+    .bm-card-domain {{
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 4px;
+    }}
+</style>
+</head>
+<body>
+
+<h1>Bookmarks</h1>
+<div class="subtitle">Bookmark your favorite webpages for quick access.</div>
+
+<div class="grid">
+    <div class="add-tile" onclick="promptAddBookmark()">
+        <span>+</span>
+        <span class="add-label">Add Bookmark</span>
+    </div>
+    {tiles_html}
+</div>
+
+<script>
+    function postIpc(msg) {{
+        if (window.ipc && window.ipc.postMessage) {{
+            window.ipc.postMessage(JSON.stringify(msg));
+        }}
+    }}
+
+    function openBookmark(url) {{
+        postIpc({{ type: 'NAVIGATE', url: url }});
+    }}
+
+    function promptAddBookmark() {{
+        const title = prompt('Enter Bookmark Name:');
+        if (!title) return;
+        let url = prompt('Enter Bookmark URL:', 'https://');
+        if (!url) return;
+        postIpc({{ type: 'ADD_BOOKMARK_DIRECT', title: title, url: url }});
+    }}
+</script>
+</body>
+</html>"##,
+        tiles_html = tiles_html
+    )
+}
+
+/// Generates the HTML for the Settings screen matching SafePay screenshot 4.
+/// Includes domain rules, pop-up blocker, virtual keyboard auto-launch, print confirmation, and PDF print toggles.
+pub fn generate_settings_page_html() -> String {
+    r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: #f8fafc;
+        color: #1e293b;
+        padding: 48px 64px;
+    }
+    h1 {
+        font-size: 32px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 32px;
+    }
+    .setting-section {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .setting-info {
+        max-width: 80%;
+    }
+    .setting-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 4px;
+    }
+    .setting-desc {
+        font-size: 13px;
+        color: #64748b;
+        line-height: 1.4;
+    }
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #cbd5e1;
+        transition: .3s;
+        border-radius: 24px;
+    }
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #0284c7; }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .rule-box {
+        margin-top: 14px;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 13px;
+    }
+    .input-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+    }
+    .input-field {
+        flex: 1;
+        height: 32px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 0 10px;
+        font-size: 12px;
+        outline: none;
+    }
+    .btn-action {
+        background: #0284c7;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 0 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .trash-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: #94a3b8;
+        font-size: 14px;
+    }
+    .trash-btn:hover { color: #ef4444; }
+</style>
+</head>
+<body>
+
+<h1>Settings</h1>
+
+<div class="setting-section">
+    <div class="setting-row">
+        <div class="setting-info">
+            <div class="setting-title">Apply SafeBrowse™ rules for accessed domains</div>
+            <div class="setting-desc">View SafeBrowse domain rules in the list below</div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+    <div class="rule-box">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span>🌐</span>
+            <strong>ubs.com</strong>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="color: #64748b;">Do not recommend me to use SafeBrowse™</span>
+            <button class="trash-btn">🗑️</button>
+        </div>
+    </div>
+</div>
+
+<div class="setting-section">
+    <div class="setting-row">
+        <div class="setting-info">
+            <div class="setting-title">Block pop-ups</div>
+            <div class="setting-desc">Blocking pop-ups will reduce the chance of compromising your device.</div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+    <div class="input-row">
+        <input type="text" class="input-field" placeholder="Allow pop-ups from these domains:">
+        <button class="btn-action">Add domain</button>
+    </div>
+    <div class="rule-box">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span>🌐</span>
+            <strong>temu.com</strong>
+        </div>
+        <button class="trash-btn">🗑️</button>
+    </div>
+</div>
+
+<div class="setting-section">
+    <div class="setting-row">
+        <div class="setting-info">
+            <div class="setting-title">Manage certificates</div>
+            <div class="setting-desc">Import existing certificates from file.</div>
+        </div>
+        <button class="btn-action" style="height: 28px;">Import</button>
+    </div>
+</div>
+
+<div class="setting-section">
+    <div class="setting-row">
+        <div class="setting-info">
+            <div class="setting-title">Use Virtual Keyboard</div>
+            <div class="setting-desc">Automatically launch Virtual Keyboard when password fields are selected.</div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+</div>
+
+<div class="setting-section">
+    <div class="setting-row">
+        <div class="setting-info">
+            <div class="setting-title">Printing confirmation</div>
+            <div class="setting-desc">Ask for confirmation before printing pages.</div>
+        </div>
+        <label class="switch">
+            <input type="checkbox">
+            <span class="slider"></span>
+        </label>
+    </div>
+</div>
+
+<div class="setting-section">
+    <div class="setting-row">
+        <div class="setting-info">
+            <div class="setting-title">Allow print to PDF</div>
+            <div class="setting-desc">Enables you to save files in a printable PDF format using Microsoft Print to PDF.</div>
+        </div>
+        <label class="switch">
+            <input type="checkbox">
+            <span class="slider"></span>
+        </label>
+    </div>
+</div>
+
+</body>
+</html>"##
+    .to_string()
+}
+
+/// Generates the HTML for the Default Desktop Companion Dock Window.
+/// Matches screenshot 1: SafePay visible in the Windows 11 taskbar dock.
+/// Clicking it or activating it immediately switches display back to SafeBrowseDesktop!
+pub fn generate_dock_companion_html() -> String {
+    r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeBrowse Dock</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: #0f1422;
+        color: #f1f5f9;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        padding: 24px;
+        text-align: center;
+    }
+    .shield-icon {
+        font-size: 38px;
+        color: #ef4444;
+        margin-bottom: 10px;
+    }
+    h2 {
+        font-size: 16px;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 6px;
+    }
+    p {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 20px;
+        line-height: 1.4;
+    }
+    .btn-return {
+        background: #0284c7;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 10px 20px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background 0.15s, transform 0.1s;
+        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+    }
+    .btn-return:hover {
+        background: #0369a1;
+        transform: translateY(-1px);
+    }
+    .btn-return:active {
+        transform: translateY(0);
+    }
+    .btn-exit {
+        margin-top: 10px;
+        background: transparent;
+        color: #94a3b8;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        padding: 6px 14px;
+        font-size: 11px;
+        cursor: pointer;
+    }
+    .btn-exit:hover {
+        color: #ef4444;
+        border-color: #ef4444;
+    }
+</style>
+</head>
+<body>
+
+<div class="shield-icon">🛡️</div>
+<h2>Bitdefender SAFEPAY™ Session Active</h2>
+<p>SafeBrowse is running inside an isolated secure desktop.<br>Click below or press <strong>Ctrl+Alt+D</strong> to return.</p>
+
+<button class="btn-return" onclick="handleReturn()">
+    <span>🖥️</span>
+    <span>Return to SafeBrowse</span>
+</button>
+
+<button class="btn-exit" onclick="handleExit()">
+    <span>✕ Terminate Session</span>
+</button>
+
+<script>
+    function postIpc(msg) {
+        if (window.ipc && window.ipc.postMessage) {
+            window.ipc.postMessage(JSON.stringify(msg));
+        }
+    }
+    function handleReturn() {
+        postIpc({ type: 'SWITCH_TO_SAFE_DESKTOP' });
+    }
+    function handleExit() {
+        postIpc({ type: 'TERMINATE_SESSION' });
+    }
+</script>
+</body>
+</html>"##
+    .to_string()
 }

@@ -6,14 +6,15 @@
 //! - Hook-immune secure virtual keyboard (direct DOM injection)
 //! - Sandboxed Chromium engine with ephemeral auto-purge profiles
 //! - Renderer-isolated persistent bookmarks store
+//! - Default desktop taskbar dock integration for seamless re-entry
 
 use std::env;
+use std::sync::Arc;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::StationsAndDesktops::GetThreadDesktop;
-use windows::Win32::System::Threading::WaitForSingleObject;
 
 use safebrowse::browser::ProfileMode;
-use safebrowse::desktop::{DesktopManager, DesktopRecoveryGuard, DesktopWatchdog};
+use safebrowse::desktop::{run_default_desktop_dock, DesktopManager, DesktopRecoveryGuard, DesktopWatchdog};
 use safebrowse::security::ClipboardBroker;
 use safebrowse::ui::run_kiosk_session;
 
@@ -38,6 +39,9 @@ ARCHITECTURAL SPECIFICATION:
     - Runs on isolated Win32 Desktop: WinSta0\SafeBrowseDesktop
     - Excluded from DWM screen scrapers via WDA_EXCLUDEFROMCAPTURE
     - Intercepts and consumes PrintScreen keystrokes
+    - Clamped window dragging: browser window cannot be lost or dragged out of frame
+    - Direct top-level webview navigation without iframes (resolves connection refusals)
+    - Default desktop taskbar dock integration for instant re-entry
     - Secure Virtual Keyboard dispatches directly to DOM (zero OS SendInput hooks)
     - Ephemeral profiles automatically purge all cookies, cache, and history on exit
 "#
@@ -86,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = dm.create_or_open_safe_desktop();
         let _ = dm.assign_current_thread_to_safe_desktop();
 
-        println!("[SafeBrowse Worker] Initialized inside isolated desktop. Launching Kiosk...");
+        println!("[SafeBrowse Worker] Initialized inside isolated desktop. Launching SafePay Kiosk...");
         let _ = ClipboardBroker::purge_clipboard(None);
         if let Err(e) = run_kiosk_session(true, profile_mode, target_url, Some(dm)) {
             eprintln!("[SafeBrowse Worker Error] Kiosk runtime error: {}", e);
@@ -96,8 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // MODE 3: Launcher / Supervisor Process (Default on launch)
-    // Why: Spawns the worker onto the isolated desktop, activates the watchdog failover,
-    // and seamlessly switches the active interactive desktop.
+    // Spawns the worker onto the isolated desktop, activates the watchdog failover,
+    // maintains taskbar dock presence on the Default desktop, and switches desktops.
     println!("===============================================================");
     println!(" SafeBrowse: Initializing High-Assurance Secure Desktop");
     println!("===============================================================");
@@ -135,7 +139,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to launch worker on safe desktop: {}", e))?;
 
     // 5. Spawn supervisor watchdog thread for emergency failover
-    // If the worker crashes, the watchdog will immediately switch back to Default desktop.
     let default_desktop_raw = unsafe {
         GetThreadDesktop(windows::Win32::System::Threading::GetCurrentThreadId())?
     };
@@ -149,15 +152,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .switch_to_safe_desktop()
         .map_err(|e| format!("Failed to switch to safe desktop: {}", e))?;
 
-    // 7. Wait for worker process termination
+    let dm_arc = Arc::new(desktop_manager);
+
+    // 7. Run Default Desktop Companion Dock Window
+    // Maintains taskbar presence on Default desktop and handles clicking to return to SafeBrowseDesktop.
+    println!("[SafeBrowse Supervisor] Running taskbar dock companion on Default desktop...");
+    let _ = run_default_desktop_dock(Arc::clone(&dm_arc), proc_info.hProcess);
+
     unsafe {
-        WaitForSingleObject(proc_info.hProcess, windows::Win32::System::Threading::INFINITE);
         let _ = CloseHandle(proc_info.hThread);
+        let _ = CloseHandle(proc_info.hProcess);
     }
 
     // 8. Safely switch back to default desktop
-    println!("[SafeBrowse] Worker terminated. Restoring Default interactive desktop...");
-    let _ = desktop_manager.switch_to_default_desktop();
+    println!("[SafeBrowse] Session finished. Restoring Default interactive desktop...");
+    let _ = dm_arc.switch_to_default_desktop();
     recovery_guard.disarm();
     drop(watchdog);
 

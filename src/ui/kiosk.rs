@@ -1,25 +1,139 @@
-//! Kiosk Window & Native Shell Execution
+//! Kiosk Window & Native SafePay Desktop Shell Execution
 //!
-//! Creates the full-screen kiosk window, applies capture protection (`WDA_EXCLUDEFROMCAPTURE`),
-//! configures defensive key interception, and runs the primary event loop.
+//! Replicates the Bitdefender SafePay secure desktop environment:
+//! - Full-Screen Desktop Shell with wallpaper and bottom taskbar ("Switch to Desktop")
+//! - Floating Browser Window with SafePay chrome (title bar, tabs with "+", omnibox)
+//! - Clamping wndproc: Window CANNOT be dragged out of frame, preventing "lost tabs"
+//! - Content WebView loads websites directly (no iframes), resolving "domains refused to connect"
+//! - Bookmarks and Settings tab integration matching SafePay screenshots 3 and 4
+//! - Direct DOM injection for hook-immune Secure Virtual Keyboard
 
+use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex};
+use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
-use tao::platform::windows::WindowExtWindows;
+use tao::platform::windows::{EventLoopBuilderExtWindows, WindowExtWindows};
 use tao::window::{Fullscreen, WindowBuilder};
-use windows::Win32::Foundation::HWND;
-use wry::{WebContext, WebViewBuilder, WebViewBuilderExtWindows};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallWindowProcW, GetSystemMetrics, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
+    GWLP_HWNDPARENT, GWLP_WNDPROC, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, WINDOWPOS, WM_MOVING,
+    WM_WINDOWPOSCHANGING, WNDPROC,
+};
+use wry::dpi::{Position, Size};
+use wry::{Rect, WebContext, WebViewBuilder, WebViewBuilderExtWindows};
 
-use crate::bookmarks::BookmarkStore;
+use crate::bookmarks::{BookmarkCategory, BookmarkStore};
+use crate::browser::tabs::{TabItem, TabKind, TabManager};
 use crate::browser::{ProfileManager, ProfileMode};
 use crate::config::{CHROMIUM_ARGS_SECURITY, DEFAULT_HOMEPAGE_URL};
 use crate::desktop::DesktopManager;
 use crate::keyboard::VirtualKeyboard;
 use crate::security::{CaptureProtector, HotkeyInterceptor};
-use crate::ui::assets::generate_kiosk_shell_html;
+use crate::ui::assets::{
+    generate_bookmarks_page_html, generate_browser_chrome_html, generate_desktop_shell_html,
+    generate_settings_page_html,
+};
 
-/// Launches and runs the full-screen kiosk browser window.
+/// Height in pixels reserved for the bottom desktop taskbar.
+pub const DESKTOP_TASKBAR_HEIGHT: i32 = 46;
+
+/// Height in pixels reserved for the browser top chrome (title bar + tab strip + omnibox).
+pub const BROWSER_CHROME_HEIGHT: f64 = 108.0;
+
+/// Atomic storage holding the original window procedure pointer before clamping subclassing.
+static PREV_WNDPROC: AtomicIsize = AtomicIsize::new(0);
+
+/// Subclassed Win32 window procedure that clamps window movements to the monitor frame.
+///
+/// Prevents the browser window from being dragged partially or completely out of view,
+/// strictly fulfilling the requirement that users can never lose their browser window or tabs.
+///
+/// # Complexity
+/// - Time: O(1)
+/// - Space: O(1)
+unsafe extern "system" fn clamped_browser_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_MOVING {
+        let rect_ptr = lparam.0 as *mut RECT;
+        if !rect_ptr.is_null() {
+            let mut r = *rect_ptr;
+            let width = r.right - r.left;
+            let height = r.bottom - r.top;
+            let screen_w = GetSystemMetrics(SM_CXSCREEN);
+            let screen_h = GetSystemMetrics(SM_CYSCREEN);
+            let bottom_limit = screen_h - DESKTOP_TASKBAR_HEIGHT;
+
+            // Clamping horizontal movement
+            if r.left < 0 {
+                r.left = 0;
+                r.right = width;
+            } else if r.right > screen_w {
+                r.right = screen_w;
+                r.left = screen_w - width;
+            }
+
+            // Clamping vertical movement
+            if r.top < 0 {
+                r.top = 0;
+                r.bottom = height;
+            } else if r.bottom > bottom_limit {
+                r.bottom = bottom_limit;
+                r.top = bottom_limit - height;
+            }
+
+            *rect_ptr = r;
+            return LRESULT(1);
+        }
+    } else if msg == WM_WINDOWPOSCHANGING {
+        let pos_ptr = lparam.0 as *mut WINDOWPOS;
+        if !pos_ptr.is_null() {
+            let pos = &mut *pos_ptr;
+            const SWP_NOMOVE: u32 = 0x0002;
+            if (pos.flags.0 & SWP_NOMOVE) == 0 {
+                let screen_w = GetSystemMetrics(SM_CXSCREEN);
+                let screen_h = GetSystemMetrics(SM_CYSCREEN);
+                let bottom_limit = screen_h - DESKTOP_TASKBAR_HEIGHT;
+
+                if pos.x < 0 {
+                    pos.x = 0;
+                } else if pos.x + pos.cx > screen_w {
+                    pos.x = screen_w - pos.cx;
+                }
+
+                if pos.y < 0 {
+                    pos.y = 0;
+                } else if pos.y + pos.cy > bottom_limit {
+                    pos.y = bottom_limit - pos.cy;
+                }
+            }
+        }
+    }
+
+    let prev = PREV_WNDPROC.load(Ordering::SeqCst);
+    if prev != 0 {
+        let prev_fn: WNDPROC = std::mem::transmute(prev);
+        CallWindowProcW(prev_fn, hwnd, msg, wparam, lparam)
+    } else {
+        windows::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
+/// Helper function to construct a wry `Rect` given logical position and size.
+#[inline]
+fn make_rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
+    Rect {
+        position: Position::Logical(tao::dpi::LogicalPosition::new(x, y)),
+        size: Size::Logical(tao::dpi::LogicalSize::new(width, height)),
+    }
+}
+
+/// Launches and manages the secure SafePay kiosk session.
 ///
 /// # Complexity
 /// - Time: Event-driven O(1) per dispatch
@@ -30,114 +144,410 @@ pub fn run_kiosk_session(
     initial_url: Option<String>,
     desktop_manager: Option<DesktopManager>,
 ) -> Result<(), String> {
-    let event_loop: EventLoop<String> = EventLoopBuilder::<String>::with_user_event().build();
+    let mut builder = EventLoopBuilder::<String>::with_user_event();
+    builder.with_any_thread(true);
+    let event_loop: EventLoop<String> = builder.build();
 
     let target_url = initial_url.unwrap_or_else(|| DEFAULT_HOMEPAGE_URL.to_string());
 
-    let mut window_builder = WindowBuilder::new()
-        .with_title("SafeBrowse - Secure Banking & Payment Environment")
-        .with_decorations(!is_fullscreen);
+    // Screen dimensions
+    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
 
-    if is_fullscreen {
-        // Why: Borderless kiosk takes over the entire visual monitor area, matching SafePay.
-        window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
-    } else {
-        window_builder = window_builder.with_inner_size(tao::dpi::LogicalSize::new(1280.0, 800.0));
-    }
-
-    let window = window_builder
-        .build(&event_loop)
-        .map_err(|e| format!("Failed to create Kiosk window: {}", e))?;
-
-    let hwnd = HWND(window.hwnd() as *mut _);
-
-    // Apply Screen Scraper & Screen Recorder Protection
-    if let Err(e) = CaptureProtector::apply_protection(hwnd) {
-        eprintln!("[SafeBrowse Warning] Capture protection notice: {}", e);
-    }
-
-    // Register defensive hotkey blockers (PrintScreen & Ctrl+Alt+D)
-    let mut hotkey_interceptor = HotkeyInterceptor::new(hwnd);
-    let _ = hotkey_interceptor.register_printscreen_blocker();
-    let _ = hotkey_interceptor.register_desktop_toggle_hotkey();
-
-    // Initialize Profile Sandbox
+    // Initialize Profile Sandbox and Bookmark Store
     let profile_mgr = ProfileManager::new(profile_mode)?;
     let data_dir = profile_mgr.data_directory().to_path_buf();
     let is_ephemeral = profile_mode == ProfileMode::Ephemeral;
-
-    let bookmark_store = Arc::new(Mutex::new(BookmarkStore::initialize().unwrap_or_else(|_| {
-        panic!("Failed to initialize secure bookmark store");
-    })));
-
-    let proxy = event_loop.create_proxy();
-    let shell_html = generate_kiosk_shell_html(&target_url);
-
     let mut web_context = WebContext::new(Some(data_dir));
     let security_args = CHROMIUM_ARGS_SECURITY.join(" ");
 
-    let webview = WebViewBuilder::new_with_web_context(&mut web_context)
+    let bookmark_store = Arc::new(Mutex::new(
+        BookmarkStore::initialize().map_err(|e| format!("Bookmarks init failed: {}", e))?,
+    ));
+
+    let tab_manager = Arc::new(Mutex::new(TabManager::new(&target_url)));
+    let proxy = event_loop.create_proxy();
+
+    // 1. Desktop Shell Window (full screen wallpaper + bottom taskbar)
+    let shell_window = if is_fullscreen {
+        let win = WindowBuilder::new()
+            .with_title("SafeBrowse Desktop Shell")
+            .with_fullscreen(Some(Fullscreen::Borderless(None)))
+            .build(&event_loop)
+            .map_err(|e| format!("Failed to create shell window: {}", e))?;
+
+        let shell_hwnd = HWND(win.hwnd() as *mut _);
+        let _ = CaptureProtector::apply_protection(shell_hwnd);
+
+        let shell_proxy = proxy.clone();
+        let _shell_view = WebViewBuilder::new_with_web_context(&mut web_context)
+            .with_html(generate_desktop_shell_html())
+            .with_devtools(false)
+            .with_ipc_handler(move |req| {
+                let _ = shell_proxy.send_event(req.body().clone());
+            })
+            .build(&win)
+            .map_err(|e| format!("Failed to build shell webview: {}", e))?;
+
+        Some((win, shell_hwnd))
+    } else {
+        None
+    };
+
+    // 2. Floating Browser Window dimensions
+    let initial_browser_w = if is_fullscreen {
+        (screen_w as f64 * 0.82).clamp(1080.0, 1480.0)
+    } else {
+        1200.0
+    };
+    let initial_browser_h = if is_fullscreen {
+        ((screen_h - DESKTOP_TASKBAR_HEIGHT) as f64 * 0.85).clamp(680.0, 920.0)
+    } else {
+        760.0
+    };
+    let initial_browser_x = if is_fullscreen {
+        ((screen_w as f64) - initial_browser_w) / 2.0
+    } else {
+        40.0
+    };
+    let initial_browser_y = if is_fullscreen {
+        ((screen_h - DESKTOP_TASKBAR_HEIGHT) as f64 - initial_browser_h) / 2.0
+    } else {
+        30.0
+    };
+
+    let browser_window = WindowBuilder::new()
+        .with_title("Bitdefender SAFEPAY™")
+        .with_decorations(false)
+        .with_inner_size(LogicalSize::new(initial_browser_w, initial_browser_h))
+        .with_position(LogicalPosition::new(initial_browser_x, initial_browser_y))
+        .build(&event_loop)
+        .map_err(|e| format!("Failed to create browser window: {}", e))?;
+
+    let browser_hwnd = HWND(browser_window.hwnd() as *mut _);
+
+    // Apply anti-screen capture protection to the browser window
+    let _ = CaptureProtector::apply_protection(browser_hwnd);
+
+    // Register PrintScreen and Desktop toggle hotkeys
+    let mut hotkey_interceptor = HotkeyInterceptor::new(browser_hwnd);
+    let _ = hotkey_interceptor.register_printscreen_blocker();
+    let _ = hotkey_interceptor.register_desktop_toggle_hotkey();
+
+    // If on safe desktop, set browser window's Win32 owner to shell window
+    // Why: Guarantees browser window stays permanently in front of the desktop shell.
+    if let Some((_, shell_hwnd)) = shell_window {
+        unsafe {
+            let _ = SetWindowLongPtrW(browser_hwnd, GWLP_HWNDPARENT, shell_hwnd.0 as isize);
+        }
+    }
+
+    // Install clamping subclass onto browser window procedure
+    // Why: Enforces that dragging NEVER allows the window to escape outside the visible screen.
+    unsafe {
+        let prev = SetWindowLongPtrW(
+            browser_hwnd,
+            GWLP_WNDPROC,
+            clamped_browser_wndproc as *const () as isize,
+        );
+        PREV_WNDPROC.store(prev, Ordering::SeqCst);
+    }
+
+    // 3. Browser Chrome WebView (Top Titlebar, Tabs, Omnibox, Virtual Keyboard)
+    let chrome_proxy = proxy.clone();
+    let tabs_snapshot: Vec<TabItem> = {
+        let tm = tab_manager.lock().unwrap();
+        tm.list().to_vec()
+    };
+    let active_tab_id = {
+        let tm = tab_manager.lock().unwrap();
+        tm.active_id()
+    };
+    let chrome_html = generate_browser_chrome_html(&tabs_snapshot, active_tab_id);
+
+    let chrome_bounds = make_rect(0.0, 0.0, initial_browser_w, BROWSER_CHROME_HEIGHT);
+    let browser_chrome = WebViewBuilder::new_with_web_context(&mut web_context)
+        .with_bounds(chrome_bounds)
+        .with_html(chrome_html)
+        .with_devtools(false)
+        .with_additional_browser_args(security_args.clone())
+        .with_ipc_handler(move |req| {
+            let _ = chrome_proxy.send_event(req.body().clone());
+        })
+        .build(&browser_window)
+        .map_err(|e| format!("Failed to create browser chrome webview: {}", e))?;
+
+    // 4. Browser Content WebView (Top-level browsing context, ZERO iframes)
+    let content_proxy = proxy.clone();
+    let content_h = initial_browser_h - BROWSER_CHROME_HEIGHT;
+    let content_bounds = make_rect(0.0, BROWSER_CHROME_HEIGHT, initial_browser_w, content_h);
+
+    let browser_content = WebViewBuilder::new_with_web_context(&mut web_context)
+        .with_bounds(content_bounds)
+        .with_url(&target_url)
         .with_incognito(is_ephemeral)
-        .with_html(shell_html)
         .with_devtools(false)
         .with_additional_browser_args(security_args)
         .with_ipc_handler(move |req| {
-            let msg = req.body().clone();
-            let _ = proxy.send_event(msg);
+            let _ = content_proxy.send_event(req.body().clone());
         })
-        .build(&window)
-        .map_err(|e| format!("Failed to initialize WebView2 inside kiosk: {}", e))?;
+        .build(&browser_window)
+        .map_err(|e| format!("Failed to create browser content webview: {}", e))?;
 
-    let webview_shared = Arc::new(Mutex::new(webview));
-    let webview_clone = Arc::clone(&webview_shared);
+    let browser_chrome = Arc::new(Mutex::new(browser_chrome));
+    let browser_content = Arc::new(Mutex::new(browser_content));
 
+    // State for maximize / restore toggle
+    let mut is_maximized = false;
+    let mut restore_bounds = (
+        initial_browser_x,
+        initial_browser_y,
+        initial_browser_w,
+        initial_browser_h,
+    );
+    let mut current_window_size = (initial_browser_w, initial_browser_h);
+
+    let dm_arc = desktop_manager.map(Arc::new);
+
+    // Event Loop
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
             Event::UserEvent(ipc_msg) => {
-                // Parse IPC JSON message
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&ipc_msg) {
                     if let Some(msg_type) = val.get("type").and_then(|t| t.as_str()) {
                         match msg_type {
+                            // Shell Actions
                             "SWITCH_DESKTOP" => {
-                                if let Some(ref dm) = desktop_manager {
+                                if let Some(ref dm) = dm_arc {
                                     let _ = dm.switch_to_default_desktop();
                                 }
                             }
+                            "FOCUS_BROWSER" => {
+                                browser_window.set_minimized(false);
+                                browser_window.set_focus();
+                                unsafe {
+                                    let _ = ShowWindow(browser_hwnd, SW_SHOW);
+                                    let _ = SetForegroundWindow(browser_hwnd);
+                                }
+                            }
                             "EXIT_APP" => {
-                                if let Some(ref dm) = desktop_manager {
+                                if let Some(ref dm) = dm_arc {
                                     let _ = dm.switch_to_default_desktop();
                                 }
                                 *control_flow = ControlFlow::Exit;
                             }
-                            "KEY_INPUT" => {
-                                if let Some(action) = val.get("action").and_then(|a| a.as_str()) {
-                                    // Generate DOM injection script
-                                    let script = VirtualKeyboard::generate_dom_injection_script(action);
-                                    let iframe_wrapper = format!(
-                                        r#"try {{
-                                            const f = document.getElementById('content-frame');
-                                            if (f && f.contentWindow && f.contentWindow.document) {{
-                                                f.contentWindow.eval({:?});
-                                            }}
-                                        }} catch(e) {{
-                                            console.error("DOM Injection cross-origin fallback:", e);
-                                        }}"#,
-                                        script
-                                    );
-                                    if let Ok(view) = webview_clone.lock() {
-                                        let _ = view.evaluate_script(&iframe_wrapper);
+
+                            // Window Controls
+                            "START_DRAG" => {
+                                if !is_maximized {
+                                    let _ = browser_window.drag_window();
+                                }
+                            }
+                            "MINIMIZE" => {
+                                browser_window.set_minimized(true);
+                            }
+                            "TOGGLE_MAXIMIZE" => {
+                                if is_maximized {
+                                    browser_window.set_inner_size(LogicalSize::new(
+                                        restore_bounds.2,
+                                        restore_bounds.3,
+                                    ));
+                                    browser_window.set_outer_position(LogicalPosition::new(
+                                        restore_bounds.0,
+                                        restore_bounds.1,
+                                    ));
+                                    is_maximized = false;
+                                } else {
+                                    // Save restore bounds before maximizing
+                                    if let Ok(pos) = browser_window.outer_position() {
+                                        restore_bounds.0 = pos.x as f64;
+                                        restore_bounds.1 = pos.y as f64;
+                                    }
+                                    restore_bounds.2 = current_window_size.0;
+                                    restore_bounds.3 = current_window_size.1;
+
+                                    let max_w = screen_w as f64;
+                                    let max_h = (screen_h - DESKTOP_TASKBAR_HEIGHT) as f64;
+                                    browser_window.set_outer_position(LogicalPosition::new(0.0, 0.0));
+                                    browser_window.set_inner_size(LogicalSize::new(max_w, max_h));
+                                    is_maximized = true;
+                                }
+                            }
+                            "CLOSE_WINDOW" => {
+                                if let Some(ref dm) = dm_arc {
+                                    let _ = dm.switch_to_default_desktop();
+                                }
+                                *control_flow = ControlFlow::Exit;
+                            }
+
+                            // Navigation Controls
+                            "NAVIGATE" => {
+                                if let Some(url) = val.get("url").and_then(|u| u.as_str()) {
+                                    let _active_id = {
+                                        let mut tm = tab_manager.lock().unwrap();
+                                        let id = tm.active_id();
+                                        tm.update_tab(id, url.to_string(), "Loading...".to_string());
+                                        id
+                                    };
+
+                                    if let Ok(content) = browser_content.lock() {
+                                        let _ = content.load_url(url);
+                                    }
+
+                                    // Sync omnibox in chrome
+                                    if let Ok(chrome) = browser_chrome.lock() {
+                                        let script = format!(
+                                            "if (window.updateActiveTabUrlAndTitle) window.updateActiveTabUrlAndTitle({:?}, null);",
+                                            url
+                                        );
+                                        let _ = chrome.evaluate_script(&script);
                                     }
                                 }
                             }
+                            "GO_BACK" => {
+                                if let Ok(content) = browser_content.lock() {
+                                    let _ = content.go_back();
+                                }
+                            }
+                            "GO_FORWARD" => {
+                                if let Ok(content) = browser_content.lock() {
+                                    let _ = content.go_forward();
+                                }
+                            }
+                            "RELOAD" => {
+                                if let Ok(content) = browser_content.lock() {
+                                    let _ = content.reload();
+                                }
+                            }
+
+                            // Tabs Management
+                            "NEW_TAB" => {
+                                let _new_id = {
+                                    let mut tm = tab_manager.lock().unwrap();
+                                    tm.open_tab("https://duckduckgo.com")
+                                };
+                                if let Ok(content) = browser_content.lock() {
+                                    let _ = content.load_url("https://duckduckgo.com");
+                                }
+                                sync_tabs_to_chrome(&tab_manager, &browser_chrome);
+                            }
+                            "SWITCH_TAB" => {
+                                if let Some(id) = val.get("id").and_then(|i| i.as_u64()) {
+                                    let (target_url, kind) = {
+                                        let mut tm = tab_manager.lock().unwrap();
+                                        tm.switch_to_tab(id as usize);
+                                        let active = tm.active_tab().cloned();
+                                        match active {
+                                            Some(t) => (t.url, t.kind),
+                                            None => ("https://duckduckgo.com".to_string(), TabKind::Web),
+                                        }
+                                    };
+
+                                    if let Ok(content) = browser_content.lock() {
+                                        match kind {
+                                            TabKind::Web => {
+                                                let _ = content.load_url(&target_url);
+                                            }
+                                            TabKind::Bookmarks => {
+                                                let bms = bookmark_store.lock().unwrap().list().to_vec();
+                                                let html = generate_bookmarks_page_html(&bms);
+                                                let _ = content.load_html(&html);
+                                            }
+                                            TabKind::Settings => {
+                                                let html = generate_settings_page_html();
+                                                let _ = content.load_html(&html);
+                                            }
+                                        }
+                                    }
+                                    sync_tabs_to_chrome(&tab_manager, &browser_chrome);
+                                }
+                            }
+                            "CLOSE_TAB" => {
+                                if let Some(id) = val.get("id").and_then(|i| i.as_u64()) {
+                                    let next_tab = {
+                                        let mut tm = tab_manager.lock().unwrap();
+                                        tm.close_tab(id as usize);
+                                        tm.active_tab().cloned()
+                                    };
+                                    if let (Some(tab), Ok(content)) = (next_tab, browser_content.lock()) {
+                                        match tab.kind {
+                                            TabKind::Web => {
+                                                let _ = content.load_url(&tab.url);
+                                            }
+                                            TabKind::Bookmarks => {
+                                                let bms = bookmark_store.lock().unwrap().list().to_vec();
+                                                let _ = content.load_html(&generate_bookmarks_page_html(&bms));
+                                            }
+                                            TabKind::Settings => {
+                                                let _ = content.load_html(&generate_settings_page_html());
+                                            }
+                                        }
+                                    }
+                                    sync_tabs_to_chrome(&tab_manager, &browser_chrome);
+                                }
+                            }
+                            "OPEN_BOOKMARKS" => {
+                                {
+                                    let mut tm = tab_manager.lock().unwrap();
+                                    tm.open_or_switch_special("Bookmarks", TabKind::Bookmarks);
+                                }
+                                if let Ok(content) = browser_content.lock() {
+                                    let bms = bookmark_store.lock().unwrap().list().to_vec();
+                                    let _ = content.load_html(&generate_bookmarks_page_html(&bms));
+                                }
+                                sync_tabs_to_chrome(&tab_manager, &browser_chrome);
+                            }
+                            "OPEN_SETTINGS" => {
+                                {
+                                    let mut tm = tab_manager.lock().unwrap();
+                                    tm.open_or_switch_special("Settings", TabKind::Settings);
+                                }
+                                if let Ok(content) = browser_content.lock() {
+                                    let _ = content.load_html(&generate_settings_page_html());
+                                }
+                                sync_tabs_to_chrome(&tab_manager, &browser_chrome);
+                            }
+
+                            // Bookmarks Management
                             "ADD_BOOKMARK" => {
+                                let (title, url) = {
+                                    let tm = tab_manager.lock().unwrap();
+                                    let tab = tm.active_tab();
+                                    match tab {
+                                        Some(t) => (t.title.clone(), t.url.clone()),
+                                        None => ("New Bookmark".to_string(), "https://duckduckgo.com".to_string()),
+                                    }
+                                };
+                                if let Ok(mut store) = bookmark_store.lock() {
+                                    let _ = store.add(&title, &url, BookmarkCategory::General);
+                                }
+                                if let Ok(chrome) = browser_chrome.lock() {
+                                    let _ = chrome.evaluate_script("alert('Bookmark added to SafeBrowse store!');");
+                                }
+                            }
+                            "ADD_BOOKMARK_DIRECT" => {
                                 if let (Some(title), Some(url)) = (
                                     val.get("title").and_then(|t| t.as_str()),
                                     val.get("url").and_then(|u| u.as_str()),
                                 ) {
                                     if let Ok(mut store) = bookmark_store.lock() {
-                                        let _ = store.add(title, url, crate::bookmarks::BookmarkCategory::General);
+                                        let _ = store.add(title, url, BookmarkCategory::General);
+                                    }
+                                    if let Ok(content) = browser_content.lock() {
+                                        let bms = bookmark_store.lock().unwrap().list().to_vec();
+                                        let _ = content.load_html(&generate_bookmarks_page_html(&bms));
+                                    }
+                                }
+                            }
+
+                            // Secure Virtual Keyboard Injection (Top-Level DOM Dispatch)
+                            "KEY_INPUT" => {
+                                if let Some(action) = val.get("action").and_then(|a| a.as_str()) {
+                                    let injection_script = VirtualKeyboard::generate_dom_injection_script(action);
+                                    if let Ok(content) = browser_content.lock() {
+                                        let _ = content.evaluate_script(&injection_script);
                                     }
                                 }
                             }
@@ -146,13 +556,59 @@ pub fn run_kiosk_session(
                     }
                 }
             }
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                if let Some(ref dm) = desktop_manager {
-                    let _ = dm.switch_to_default_desktop();
+
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::Resized(phys_size),
+                ..
+            } if window_id == browser_window.id() => {
+                let scale = browser_window.scale_factor();
+                let width = phys_size.width as f64 / scale;
+                let height = phys_size.height as f64 / scale;
+                current_window_size = (width, height);
+
+                let content_h = (height - BROWSER_CHROME_HEIGHT).max(10.0);
+
+                if let Ok(chrome) = browser_chrome.lock() {
+                    let _ = chrome.set_bounds(make_rect(0.0, 0.0, width, BROWSER_CHROME_HEIGHT));
                 }
-                *control_flow = ControlFlow::Exit;
+                if let Ok(content) = browser_content.lock() {
+                    let _ = content.set_bounds(make_rect(0.0, BROWSER_CHROME_HEIGHT, width, content_h));
+                }
+            }
+
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                if window_id == browser_window.id() {
+                    if let Some(ref dm) = dm_arc {
+                        let _ = dm.switch_to_default_desktop();
+                    }
+                    *control_flow = ControlFlow::Exit;
+                }
             }
             _ => {}
         }
     });
+}
+
+/// Helper function to synchronize tab state from `TabManager` to the Chrome webview.
+fn sync_tabs_to_chrome(
+    tab_manager: &Arc<Mutex<TabManager>>,
+    browser_chrome: &Arc<Mutex<wry::WebView>>,
+) {
+    let (tabs_json, active_id) = {
+        let tm = tab_manager.lock().unwrap();
+        (serde_json::to_string(tm.list()).unwrap_or_else(|_| "[]".to_string()), tm.active_id())
+    };
+
+    if let Ok(chrome) = browser_chrome.lock() {
+        let script = format!(
+            "if (window.updateTabs) window.updateTabs({}, {});",
+            tabs_json, active_id
+        );
+        let _ = chrome.evaluate_script(&script);
+    }
 }

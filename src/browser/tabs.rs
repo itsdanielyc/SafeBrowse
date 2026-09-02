@@ -4,6 +4,14 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Type classification for a tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TabKind {
+    Web,
+    Bookmarks,
+    Settings,
+}
+
 /// Represents an individual browser tab.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabItem {
@@ -12,6 +20,7 @@ pub struct TabItem {
     pub url: String,
     pub is_loading: bool,
     pub is_secure: bool,
+    pub kind: TabKind,
 }
 
 impl TabItem {
@@ -25,6 +34,25 @@ impl TabItem {
             url: url_str,
             is_loading: false,
             is_secure,
+            kind: TabKind::Web,
+        }
+    }
+
+    /// Constructs a special system tab (e.g. Bookmarks or Settings).
+    pub fn new_special(id: usize, title: impl Into<String>, kind: TabKind) -> Self {
+        let title_str = title.into();
+        let url_scheme = match kind {
+            TabKind::Bookmarks => "safebrowse://bookmarks",
+            TabKind::Settings => "safebrowse://settings",
+            TabKind::Web => "about:blank",
+        };
+        Self {
+            id,
+            title: title_str,
+            url: url_scheme.to_string(),
+            is_loading: false,
+            is_secure: true,
+            kind,
         }
     }
 }
@@ -64,7 +92,7 @@ impl TabManager {
         self.tabs.iter().find(|t| t.id == self.active_tab_id)
     }
 
-    /// Creates and activates a new tab with the target URL.
+    /// Creates and activates a new web tab with the target URL.
     ///
     /// # Complexity
     /// - Time: O(1)
@@ -73,6 +101,26 @@ impl TabManager {
         let id = self.next_id;
         self.next_id += 1;
         let tab = TabItem::new(id, url);
+        self.tabs.push(tab);
+        self.active_tab_id = id;
+        id
+    }
+
+    /// Opens or switches to a special tab (Bookmarks or Settings).
+    ///
+    /// # Complexity
+    /// - Time: O(N)
+    /// - Space: O(1)
+    pub fn open_or_switch_special(&mut self, title: &str, kind: TabKind) -> usize {
+        if let Some(existing) = self.tabs.iter().find(|t| t.kind == kind) {
+            let id = existing.id;
+            self.active_tab_id = id;
+            return id;
+        }
+
+        let id = self.next_id;
+        self.next_id += 1;
+        let tab = TabItem::new_special(id, title, kind);
         self.tabs.push(tab);
         self.active_tab_id = id;
         id
@@ -100,6 +148,7 @@ impl TabManager {
                 first.url = "https://duckduckgo.com".to_string();
                 first.title = "New Tab".to_string();
                 first.is_secure = true;
+                first.kind = TabKind::Web;
             }
             return false;
         }

@@ -132,10 +132,11 @@ pub fn run_default_desktop_dock(
         }
     });
 
-    let mut web_context = WebContext::new(None);
+    let dock_dir = std::env::temp_dir().join(format!("SafeBrowse_Dock_{}", uuid::Uuid::new_v4()));
+    let mut web_context = WebContext::new(Some(dock_dir));
     let html = generate_dock_companion_html();
 
-    let _webview = WebViewBuilder::new_with_web_context(&mut web_context)
+    let webview = WebViewBuilder::new_with_web_context(&mut web_context)
         .with_html(html)
         .with_devtools(false)
         .with_ipc_handler(move |req| {
@@ -145,6 +146,7 @@ pub fn run_default_desktop_dock(
         .map_err(|e| format!("Failed to initialize Dock webview: {}", e))?;
 
     event_loop.run(move |event, _, control_flow| {
+        let _dock_guard = &webview;
         *control_flow = ControlFlow::Wait;
 
         match event {

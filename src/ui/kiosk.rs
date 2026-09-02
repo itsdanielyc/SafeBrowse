@@ -245,7 +245,6 @@ pub fn run_kiosk_session(
     let profile_mgr = ProfileManager::new(profile_mode)?;
     let data_dir = profile_mgr.data_directory().to_path_buf();
     let is_ephemeral = profile_mode == ProfileMode::Ephemeral;
-    let mut web_context = WebContext::new(Some(data_dir));
     let security_args = CHROMIUM_ARGS_SECURITY.join(" ");
 
     let bookmark_store = Arc::new(Mutex::new(
@@ -259,7 +258,9 @@ pub fn run_kiosk_session(
     }
 
     // 1. Desktop Shell Window (full screen wallpaper + bottom taskbar)
-    let shell_window = if is_fullscreen {
+    // Why: Use an isolated data directory for the desktop shell webview to prevent
+    // any environment options or controller lifetime conflicts with the browser webviews.
+    let (_shell_window, shell_hwnd, shell_view_keepalive) = if is_fullscreen {
         let win = WindowBuilder::new()
             .with_title("SafeBrowse Desktop Shell")
             .with_fullscreen(Some(Fullscreen::Borderless(None)))
@@ -270,18 +271,22 @@ pub fn run_kiosk_session(
         let _ = CaptureProtector::apply_protection(shell_hwnd);
 
         let shell_proxy = proxy.clone();
-        let _shell_view = WebViewBuilder::new_with_web_context(&mut web_context)
+        let shell_dir = data_dir.join("shell_env");
+        let mut shell_context = WebContext::new(Some(shell_dir));
+        let shell_view = WebViewBuilder::new_with_web_context(&mut shell_context)
             .with_html(generate_desktop_shell_html())
             .with_devtools(false)
+            .with_additional_browser_args(security_args.clone())
+            .with_incognito(is_ephemeral)
             .with_ipc_handler(move |req| {
                 let _ = shell_proxy.send_event(req.body().clone());
             })
             .build(&win)
             .map_err(|e| format!("Failed to build shell webview: {}", e))?;
 
-        Some((win, shell_hwnd))
+        (Some(win), Some(shell_hwnd), Some(shell_view))
     } else {
-        None
+        (None, None, None)
     };
 
     // 2. Floating Browser Window dimensions
@@ -326,9 +331,9 @@ pub fn run_kiosk_session(
 
     // If on safe desktop, set browser window's Win32 owner to shell window
     // Why: Guarantees browser window stays permanently in front of the desktop shell.
-    if let Some((_, shell_hwnd)) = shell_window {
+    if let Some(parent_hwnd) = shell_hwnd {
         unsafe {
-            let _ = SetWindowLongPtrW(browser_hwnd, GWLP_HWNDPARENT, shell_hwnd.0 as isize);
+            let _ = SetWindowLongPtrW(browser_hwnd, GWLP_HWNDPARENT, parent_hwnd.0 as isize);
         }
     }
 
@@ -355,12 +360,16 @@ pub fn run_kiosk_session(
     };
     let chrome_html = generate_browser_chrome_html(&tabs_snapshot, active_tab_id);
 
+    let browser_dir = data_dir.join("browser_env");
+    let mut browser_context = WebContext::new(Some(browser_dir));
+
     let chrome_bounds = make_rect(0.0, 0.0, initial_browser_w, BROWSER_CHROME_HEIGHT);
-    let browser_chrome = WebViewBuilder::new_with_web_context(&mut web_context)
+    let browser_chrome = WebViewBuilder::new_with_web_context(&mut browser_context)
         .with_bounds(chrome_bounds)
         .with_html(chrome_html)
         .with_devtools(false)
         .with_additional_browser_args(security_args.clone())
+        .with_incognito(is_ephemeral)
         .with_ipc_handler(move |req| {
             let _ = chrome_proxy.send_event(req.body().clone());
         })
@@ -398,7 +407,7 @@ pub fn run_kiosk_session(
     let load_proxy = proxy.clone();
     let nw_proxy = proxy.clone();
 
-    let browser_content = WebViewBuilder::new_with_web_context(&mut web_context)
+    let browser_content = WebViewBuilder::new_with_web_context(&mut browser_context)
         .with_bounds(content_bounds)
         .with_url(&target_url)
         .with_incognito(is_ephemeral)
@@ -449,6 +458,7 @@ pub fn run_kiosk_session(
 
     // Event Loop
     event_loop.run(move |event, _, control_flow| {
+        let _shell_guard = &shell_view_keepalive;
         *control_flow = ControlFlow::Wait;
 
         match event {

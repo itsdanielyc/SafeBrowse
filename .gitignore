@@ -1,0 +1,18 @@
+# Rust build targets
+/target
+Cargo.lock
+
+# Editor & OS artifacts
+.vscode/
+.idea/
+*.swp
+*.bak
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+
+# SafeBrowse temporary session data
+*.tmp
+*.tmp.*
+SafeBrowse_Session_*
+SafeBrowse_Test_*

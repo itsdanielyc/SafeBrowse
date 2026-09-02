@@ -1,0 +1,38 @@
+[package]
+name = "safebrowse"
+version = "0.1.0"
+edition = "2021"
+authors = ["SafeBrowse Contributors"]
+description = "High-assurance open-source alternative to Bitdefender SafePay for Windows"
+
+[lib]
+name = "safebrowse"
+path = "src/lib.rs"
+
+[[bin]]
+name = "safebrowse"
+path = "src/main.rs"
+
+[dependencies]
+tao = "0.37.0"
+wry = "0.56.1"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_Com",
+    "Win32_System_SystemServices",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_DataExchange",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.10", features = ["v4"] }
+directories = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.5"

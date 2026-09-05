@@ -33,12 +33,27 @@ jobs:
         with:
           node-version: '24.18.0'
           package-manager-cache: false
+      - name: Install the current Microsoft WebView2 Evergreen Runtime
+        run: |
+          $bootstrapperPath = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrapperPath
+          $signature = Get-AuthenticodeSignature -LiteralPath $bootstrapperPath
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?:^|, )O=Microsoft Corporation(?:,|$)') {
+            throw 'The runtime bootstrapper does not have a valid Microsoft signature.'
+          }
+          $runtimeInstall = Start-Process -FilePath $bootstrapperPath -ArgumentList '/silent', '/install' -WindowStyle Hidden -Wait -PassThru
+          if ($runtimeInstall.ExitCode -ne 0 -and $runtimeInstall.ExitCode -ne 3010) {
+            throw "WebView2 setup failed with exit code $($runtimeInstall.ExitCode)."
+          }
       - name: Check formatting
         run: cargo fmt --check
       - name: Check all Rust targets
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test Rust and hidden native WebView fixtures
-        run: cargo test --locked
+        run: |
+          cargo test --locked --lib browser::runtime::tests::installed_runtime_is_discoverable_without_creating_a_session -- --ignored --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked
       - name: Test JavaScript behavior
         run: node --test tests/keyboard_dom_tests.cjs tests/website_print_guard_tests.cjs tests/star_history_tests.mjs
       - name: Test release guards and packaging with a disposable fixture

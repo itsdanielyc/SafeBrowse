@@ -11,6 +11,6 @@
     <text x="40" y="152" fill="#a7b9bc" font-size="17">The first live star count will appear here shortly.</text>
     <text x="40" y="185" fill="#a7b9bc" font-size="15">Star the project to follow its progress and help others discover it.</text>
     <path d="M40 249H920" stroke="#294048"/>
-    <text x="40" y="291" fill="#91a9ad" font-size="13">Daily UTC observations · itsdanielyc/SafeBrowse</text>
+    <text x="40" y="291" fill="#91a9ad" font-size="13">Daily UTC totals</text>
   </g>
 </svg>

@@ -33,7 +33,7 @@ The demo shows the product interface. For capture-test scope and remaining platf
 1. **[Download SafeBrowse for Windows x64](https://github.com/itsdanielyc/SafeBrowse/releases/download/v0.1.0/SafeBrowse-Setup-0.1.0-x64.exe)** or visit the [release page](https://github.com/itsdanielyc/SafeBrowse/releases/tag/v0.1.0).
 2. Run the installer normally, without **Run as administrator**. It installs for your Windows account and offers an optional desktop shortcut.
 3. Open **SafeBrowse** from the Start menu. Browse in its separate desktop.
-4. Press **Ctrl+Alt+D** or choose the **Windows desktop** button to return. Click SafeBrowse's taskbar entry to go back to the session. Close the browser to end it.
+4. Choose the **Back to desktop** button to return. Click SafeBrowse's taskbar entry to go back to the session. Close the browser to end it.
 
 **Requirements:** Windows x64, Windows 11 or Windows 10 build 19041 or later, and a supported Microsoft Edge WebView2 Evergreen Runtime. Use a Windows version still receiving security updates. The installer checks WebView2 and can install a missing or older runtime using Microsoft's bootstrapper. This requires internet only when the runtime needs installing or updating.
 
@@ -45,7 +45,7 @@ SafeBrowse clears the **current Windows clipboard** when entering and normally l
 
 | Feature | How it works |
 | --- | --- |
-| Separate browsing desktop | Switch between your session and Windows with a button or **Ctrl+Alt+D**. |
+| Separate browsing desktop | Return with the **Back to desktop** button; use SafeBrowse's taskbar entry to go back to the session. |
 | Capture exclusion by default | Windows capture protection is applied and checked before the browser appears. If it cannot be applied, the session fails to start. |
 | Fresh browsing sessions | Temporary cookies and site data are removed on normal close; an optional persistent mode keeps them. Bookmarks and preferences remain between sessions. |
 | Familiar browser controls | Tabs, back and forward, bookmarks, an address/search bar and an on-screen keyboard. |
@@ -139,9 +139,9 @@ If ordinary applications also launch elevated because UAC is disabled, use a sta
 </details>
 
 <details>
-<summary><strong>I cannot get back to Windows, or Ctrl+Alt+D does not work</strong></summary>
+<summary><strong>How do I get back to Windows or return to SafeBrowse?</strong></summary>
 
-Use the **Windows desktop** button. Another application can already own **Ctrl+Alt+D**, in which case the button and companion taskbar entry remain available. On your usual desktop, click the existing SafeBrowse taskbar entry to return to the browsing session; starting another copy does not open a second session.
+Use the **Back to desktop** button. On your usual desktop, click the existing SafeBrowse taskbar entry to return to the browsing session; starting another copy does not open a second session.
 
 If the session becomes unresponsive, Windows' **Ctrl+Alt+Delete** screen remains an escape route. Unsaved input can be lost. After an abnormal exit, check any transaction's status before repeating it: SafeBrowse does not automatically replay submissions.
 

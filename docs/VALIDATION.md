@@ -1,5 +1,15 @@
 # Verification record
 
+## Shortcut documentation and chart caption correction — 5 September 2026
+
+The maintainer reported that Ctrl+Alt+D does not return from the isolated session. The earlier registration probe established duplicate-registration rejection only; it did not demonstrate cross-desktop delivery. The current chord is registered to the companion on the Default desktop, and Windows Magnifier also uses this chord for docked view. That ownership arrangement is a plausible explanation of the observed failure, not a reproduced root cause.
+
+README and usage instructions now document the Back to desktop button and companion taskbar entry. Future-build command-line help uses the same guidance. This correction does not claim a working keyboard-return implementation or modify the already-published v0.1.0 installer. An application-local, configurable replacement would need focus and cross-desktop testing before being advertised.
+
+The star chart's visible footer is now exactly **Daily UTC totals**. The scheduled workflow runs at 06:23 UTC and can also be dispatched manually. It reads the repository's current star count, stores a daily observation on the separate star-history branch, and renders the SVG used by the README. A rendering-only refresh can now update the SVG without rewriting an unchanged observation; tests cover that refresh and its idempotent repeat.
+
+References: [Microsoft accessibility shortcuts](https://support.microsoft.com/en-us/accessibility/windows/windows-keyboard-shortcuts-for-accessibility), [RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey), [Windows desktops](https://learn.microsoft.com/en-us/windows/win32/winstation/desktops).
+
 ## First public preview preparation — 5 September 2026
 
 The public project is [itsdanielyc/SafeBrowse](https://github.com/itsdanielyc/SafeBrowse). The README targets supported recording and screen-sharing workflows, includes the owner's unchanged product overview and original demo assets, and ends with collapsed troubleshooting entries. Its playable attachment is a smaller H.264/AAC derivative of the same supplied animation. Private vulnerability reporting is enabled; no contact mailbox is implied by a GitHub commit noreply address.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { recordObservation, renderChart, renderPlaceholder, validateHistory, validateRepository, publishHistory } from '../scripts/update-star-history.mjs';
 
@@ -16,7 +17,8 @@ function firstObservation(stars = 0) {
 }
 
 /** Fake GitHub responses exercise publication without any network or credentials. */
-function fakeGithub(previous, { stars = 0, rejectRefUpdate = false, unexpectedFiles = false } = {}) {
+function fakeGithub(previous, { stars = 0, rejectRefUpdate = false, unexpectedFiles = false,
+    chart = previous ? renderChart(previous) : '' } = {}) {
     const calls = [];
     const request = async (url, options) => {
         const path = url.replace(`https://api.github.com/repos/${REPOSITORY}`, '');
@@ -31,7 +33,8 @@ function fakeGithub(previous, { stars = 0, rejectRefUpdate = false, unexpectedFi
         } else if (path === `/git/commits/${OLD_REVISION}`) value = { tree: { sha: OLD_TREE } };
         else if (path === `/git/trees/${OLD_TREE}?recursive=1`) value = { truncated: false, tree: [
             { path: 'stars.json', type: 'blob', mode: '100644', sha: DATA_BLOB, size: Buffer.byteLength(JSON.stringify(previous)) },
-            { path: unexpectedFiles ? 'unrelated.txt' : 'star-history.svg', type: 'blob', mode: '100644', sha: DATA_BLOB, size: 100 },
+            { path: unexpectedFiles ? 'unrelated.txt' : 'star-history.svg', type: 'blob', mode: '100644',
+                sha: createHash('sha1').update(`blob ${Buffer.byteLength(chart)}\0${chart}`).digest('hex'), size: Buffer.byteLength(chart) },
         ] };
         else if (path === `/git/blobs/${DATA_BLOB}`) value = { encoding: 'base64', content: Buffer.from(JSON.stringify(previous)).toString('base64') };
         else if (path === '/git/trees' && options.method === 'POST') value = { sha: NEW_TREE };
@@ -57,6 +60,7 @@ test('a zero-star first observation is real, and the pending graphic invents no 
     const pending = renderPlaceholder(REPOSITORY);
     assert.match(pending, /No star counts have been recorded yet/);
     assert.doesNotMatch(pending, /0 stars|<circle|polyline/);
+    assert.match(pending, /<text[^>]*>Daily UTC totals<\/text>/);
 });
 
 test('daily snapshots replace same-day totals, allow falling totals, and never backfill missed days', () => {
@@ -69,7 +73,9 @@ test('daily snapshots replace same-day totals, allow falling totals, and never b
     const svg = renderChart(later);
     assert.match(svg, /polyline/);
     assert.match(svg, /11 stars/);
-    assert.match(svg, /Missed days are not backfilled/);
+    assert.match(svg, /<text[^>]*>Daily UTC totals<\/text>/);
+    assert.doesNotMatch(svg, /<text[^>]*>[^<]*(?:rise or fall|backfilled)/);
+    assert.match(svg, /<desc[^>]*>[^<]*Missing days are not backfilled\./);
     assert.doesNotMatch(svg, /NaN|Infinity/);
 });
 
@@ -101,6 +107,29 @@ test('an unchanged same-day observation performs no Git mutations', async () => 
     const result = await publishHistory({ repository: REPOSITORY, token: 'fixture-only', request: github.request, now: new Date('2026-09-05T11:00:00Z') });
     assert.equal(result.changed, false);
     assert.ok(github.calls.every(call => call.method === 'GET'));
+});
+
+test('a changed chart refreshes unchanged totals without rewriting history, then becomes a no-op', async () => {
+    const history = firstObservation(3);
+    const currentChart = renderChart(history);
+    const previousChart = currentChart.replace('>Daily UTC totals</text>',
+        '>Daily UTC totals · Stars can rise or fall · Missed days are not backfilled</text>');
+    const github = fakeGithub(history, { stars: 3, chart: previousChart });
+    const now = new Date('2026-09-05T11:00:00Z');
+    const result = await publishHistory({ repository: REPOSITORY, token: 'fixture-only', request: github.request, now });
+    assert.equal(result.changed, true);
+    const tree = github.calls.find(call => call.path === '/git/trees').body;
+    assert.equal(tree.base_tree, OLD_TREE);
+    assert.deepEqual(tree.tree, [{ path: 'star-history.svg', mode: '100644', type: 'blob', content: currentChart }]);
+    assert.equal(history.updatedAt, FIRST_OBSERVATION);
+    assert.deepEqual(history.samples, [{ date: '2026-09-05', stars: 3 }]);
+    assert.deepEqual(github.calls.find(call => call.path === '/git/commits').body.parents, [OLD_REVISION]);
+    assert.deepEqual(github.calls.at(-1), { path: '/git/refs/heads/star-history', method: 'PATCH', body: { sha: NEW_REVISION, force: false } });
+
+    const refreshedGithub = fakeGithub(history, { stars: 3, chart: tree.tree[0].content });
+    const repeated = await publishHistory({ repository: REPOSITORY, token: 'fixture-only', request: refreshedGithub.request, now });
+    assert.equal(repeated.changed, false);
+    assert.ok(refreshedGithub.calls.every(call => call.method === 'GET'));
 });
 
 test('concurrent history updates fail without a forced overwrite or fallback', async () => {

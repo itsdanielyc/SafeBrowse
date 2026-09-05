@@ -1,5 +1,6 @@
 /** Daily, observed GitHub star totals. Publishing is explicitly opt-in. */
 import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const DATA_VERSION = 1;
@@ -148,7 +149,7 @@ export function renderPlaceholder(repository) {
     <text x="40" y="152" fill="#a7b9bc" font-size="17">The first live star count will appear here shortly.</text>
     <text x="40" y="185" fill="#a7b9bc" font-size="15">Star the project to follow its progress and help others discover it.</text>
     <path d="M40 249H920" stroke="#294048"/>
-    <text x="40" y="291" fill="#91a9ad" font-size="13">Daily UTC observations · ${escapeXml(repository)}</text>`);
+    <text x="40" y="291" fill="#91a9ad" font-size="13">Daily UTC totals</text>`);
 }
 
 /** Draws actual observations, with an honest single-point state and no backfill.
@@ -194,7 +195,7 @@ export function renderChart(history) {
     <circle cx="${latestPoint.x.toFixed(2)}" cy="${latestPoint.y.toFixed(2)}" r="5" fill="#51dfc4" stroke="#101b21" stroke-width="2"/>
     ${firstDateLabel}
     ${lastDateLabel}
-    <text x="40" y="313" fill="#91a9ad" font-size="12">Daily UTC totals · Stars can rise or fall · Missed days are not backfilled</text>`);
+    <text x="40" y="313" fill="#91a9ad" font-size="12">Daily UTC totals</text>`);
 }
 
 /** Makes bounded requests to GitHub only; failures never log tokens or response bodies. */
@@ -227,6 +228,17 @@ function objectId(value) {
     return value;
 }
 
+/** Compares the rendered chart with Git's blob identity without downloading it.
+ * Git hashes the object header as well as its UTF-8 contents. */
+function matchesPublishedChart(chart, publishedObjectId) {
+    const algorithm = publishedObjectId.length === 40 ? 'sha1' : 'sha256';
+    const renderedObjectId = createHash(algorithm)
+        .update(`blob ${Buffer.byteLength(chart)}\0`)
+        .update(chart)
+        .digest('hex');
+    return renderedObjectId === publishedObjectId;
+}
+
 /** Reads only the dedicated data branch and refuses to overwrite unrelated contents. */
 async function readPublishedHistory(api, repository) {
     const reference = await api(`/git/ref/heads/${HISTORY_BRANCH}`, 'GET', undefined, true);
@@ -255,7 +267,8 @@ async function readPublishedHistory(api, repository) {
         throw new Error('Star history encoding is invalid or too large.');
     }
     const history = validateHistory(JSON.parse(decoded.toString('utf8')), repository);
-    return { revision, treeId, history };
+    const chartEntry = tree.tree.find(entry => entry.path === CHART_FILE);
+    return { revision, treeId, history, chartObjectId: objectId(chartEntry.sha) };
 }
 
 /** Publishes only data/SVG; a concurrent update fails rather than losing its history.
@@ -269,15 +282,22 @@ export async function publishHistory({ repository, token, request = fetch, now =
     const previous = await readPublishedHistory(api, repository);
     const history = recordObservation(previous?.history, metadata.full_name, metadata.created_at,
         metadata.stargazers_count, now.toISOString());
-    if (history === previous?.history) return { changed: false, stars: metadata.stargazers_count };
-    const data = `${JSON.stringify(history, null, 2)}\n`;
-    if (Buffer.byteLength(data) > MAX_HISTORY_BYTES) throw new Error('Star history exceeds the supported file size.');
+    const chart = renderChart(history);
+    const observationChanged = history !== previous?.history;
+    const chartChanged = !previous || !matchesPublishedChart(chart, previous.chartObjectId);
+    if (!observationChanged && !chartChanged) return { changed: false, stars: metadata.stargazers_count };
+    const updatedFiles = [];
+    if (observationChanged) {
+        const data = `${JSON.stringify(history, null, 2)}\n`;
+        if (Buffer.byteLength(data) > MAX_HISTORY_BYTES) throw new Error('Star history exceeds the supported file size.');
+        updatedFiles.push({ path: DATA_FILE, mode: '100644', type: 'blob', content: data });
+    }
+    if (chartChanged) {
+        updatedFiles.push({ path: CHART_FILE, mode: '100644', type: 'blob', content: chart });
+    }
     const tree = await api('/git/trees', 'POST', {
         ...(previous ? { base_tree: previous.treeId } : {}),
-        tree: [
-            { path: DATA_FILE, mode: '100644', type: 'blob', content: data },
-            { path: CHART_FILE, mode: '100644', type: 'blob', content: renderChart(history) },
-        ],
+        tree: updatedFiles,
     });
     const commit = await api('/git/commits', 'POST', {
         message: `Update star history for ${history.updatedAt.slice(0, 10)}`,

@@ -62,7 +62,7 @@ OPTIONS:
 
 By default, SafeBrowse uses a separate desktop, requests capture exclusion,
 and removes its temporary browser profile after a normal shutdown.
-Ctrl+Alt+D returns to Windows; the SafeBrowse taskbar entry returns to the session.
+The Back to desktop button returns to Windows; the SafeBrowse taskbar entry returns to the session.
 
 --allow-screen-recording displays a blocking red warning and a lasting indicator.
 Use it with --windowed for UI debugging. Do not use real credentials in this mode.

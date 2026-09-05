@@ -6,7 +6,7 @@ For downloads and a quick start, see the [README](../README.md). This guide desc
 
 The [unsigned small installer](INSTALLER.md) supports current-user installation, WebView2 setup and optional data removal. It compiles locally and has passed isolated installer integration tests; the documented clean-machine and visual checks remain. Published downloads are linked from the [README](../README.md).
 
-- Separate Win32 desktop, with a companion taskbar entry and `Ctrl+Alt+D` to move between the session and Windows.
+- Separate Win32 desktop, with a **Back to desktop** button to leave the session and a companion taskbar entry to return to it.
 - A fresh desktop identity and authenticated supervisor-to-worker startup for each isolated session. Direct worker launches are rejected.
 - A taskbar anchored to the bottom of the isolated desktop, including when the browser is restored or moved. Its language button opens the installed keyboard layouts.
 - Capture exclusion requested and verified before the browser window becomes visible. Launch fails if Windows cannot apply it.
@@ -59,11 +59,11 @@ cargo build --release --locked
 .\target\release\safebrowse.exe
 ```
 
-The normal launch creates a fresh `WinSta0\SafeBrowseDesktop_<UUID>` session. `Ctrl+Alt+D` or the Windows desktop button returns to Windows. Click the existing SafeBrowse taskbar entry to return to the session. Closing the browser ends it and restores the Windows desktop. Normal launches share a session lock, including windowed mode. Any second launch now stops with a message to use that existing taskbar control or close the session first; it does not switch to a desktop or window found by a predictable name. New launch options apply after the session closes.
+The normal launch creates a fresh `WinSta0\SafeBrowseDesktop_<UUID>` session. The Back to desktop button returns to Windows. Click the existing SafeBrowse taskbar entry to return to the session. Closing the browser ends it and restores the Windows desktop. Normal launches share a session lock, including windowed mode. Any second launch now stops with a message to use that existing taskbar control or close the session first; it does not switch to a desktop or window found by a predictable name. New launch options apply after the session closes.
 
 The supervisor retains its session desktop handle and authorizes one worker through a private inherited-handle exchange before the worker touches the clipboard or browser profile. A job ties the worker's lifetime to its supervisor before worker execution begins. These controls prevent the earlier unauthenticated launch paths; they do not isolate the host from other processes running as the same Windows user. A precreated session mutex can still deny startup. See the current boundaries in the [source security review](reviews/safebrowse-security-review.md).
 
-The companion registers the desktop shortcut once for the session. If another application already owns `Ctrl+Alt+D`, the console reports the conflict; the desktop button and companion taskbar entry remain available. Choosing a language changes SafeBrowse's input windows without installing languages or changing the Windows system default. The picker keeps focus while its embedded browser control becomes active, so opening it repeatedly does not dismiss it immediately.
+Use the desktop button and companion taskbar entry for switching. Choosing a language changes SafeBrowse's input windows without installing languages or changing the Windows system default. The picker keeps focus while its embedded browser control becomes active, so opening it repeatedly does not dismiss it immediately.
 
 The isolated mode clears the **current Windows clipboard** on entry and normal exit. Windowed development mode does not clear it. Clipboard history, cloud clipboard synchronization, and copies already read by other applications are outside this operation's scope.
 
@@ -164,4 +164,3 @@ Automated tests are regression checks, not proof of security against malware or 
 For keyboard security, the current tests verify input behavior and focus; they do not establish resistance to real keyloggers. The [keyboard-resistance comparison and controlled test proposal](reviews/keyboard-resistance.md) separates OS keyboard events from page-side observation and specifies disposable-VM checks using dummy data. Safepay security parity has not been established, even when website reputation and antivirus features are excluded.
 
 The [source security review](reviews/safebrowse-security-review.md) records concrete findings and remediations. The [Safepay comparison](reviews/safepay-research.md) maps our implementation to Bitdefender's documented capabilities and identifies unverified claims and missing protections.
-

@@ -11,8 +11,10 @@
 
 pub mod bookmarks;
 pub mod browser;
+pub mod cli;
 pub mod config;
 pub mod desktop;
 pub mod keyboard;
+pub mod maintenance;
 pub mod security;
 pub mod ui;

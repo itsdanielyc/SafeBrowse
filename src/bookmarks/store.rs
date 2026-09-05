@@ -1,17 +1,18 @@
 //! Persistent Bookmark Store Subsystem
 //!
-//! Provides durable, renderer-isolated storage for trusted banking and payment URLs.
-//! Uses atomic file replacement with unique temporary staging paths to ensure
-//! corruption-free persistence even under high concurrency or unexpected power loss.
+//! Persists user bookmarks outside web content using atomic file replacement.
+//! Callers must serialize writes through one store instance. Saved addresses are
+//! user data; their presence does not establish that a website is trustworthy.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
+use std::collections::HashSet;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use url::Url;
 use uuid::Uuid;
 
+use crate::browser::navigation::validate_web_url;
 use crate::config::{APP_IDENTIFIER, BOOKMARKS_FILE_NAME};
 
 /// Category classification for bookmarks.
@@ -23,7 +24,7 @@ pub enum BookmarkCategory {
     General,
 }
 
-/// Represents an individual trusted bookmark entry.
+/// Represents an individual user bookmark entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bookmark {
     pub id: String,
@@ -35,17 +36,17 @@ pub struct Bookmark {
 
 impl Bookmark {
     /// Constructs a new bookmark with a generated UUID and current timestamp.
-    pub fn new(title: impl Into<String>, url: impl Into<String>, category: BookmarkCategory) -> Result<Self, String> {
-        let url_str = url.into();
-        // Why: Validate URL format strictly to prevent malformed or script injection URLs.
-        let parsed = Url::parse(&url_str).map_err(|e| format!("Invalid bookmark URL: {}", e))?;
-        if parsed.scheme() != "https" && parsed.scheme() != "http" {
-            return Err("Only HTTP/HTTPS URLs are allowed for bookmarks".to_string());
-        }
+    pub fn new(
+        title: impl Into<String>,
+        url: impl Into<String>,
+        category: BookmarkCategory,
+    ) -> Result<Self, String> {
+        let url_str = validate_web_url(&url.into())?;
+        let title = normalize_title(&title.into())?;
 
         Ok(Self {
             id: Uuid::new_v4().to_string(),
-            title: title.into(),
+            title,
             url: url_str,
             category,
             created_at: Utc::now(),
@@ -53,7 +54,7 @@ impl Bookmark {
     }
 }
 
-/// Thread-safe and crash-resilient manager for user bookmarks.
+/// Owns one bookmark collection; callers provide synchronization when shared.
 pub struct BookmarkStore {
     storage_path: PathBuf,
     bookmarks: Vec<Bookmark>,
@@ -79,7 +80,10 @@ impl BookmarkStore {
     /// - Time: O(N) where N is number of bookmarks on disk
     /// - Space: O(N)
     pub fn with_storage_path(storage_path: PathBuf) -> Result<Self, String> {
-        if let Some(parent) = storage_path.parent() {
+        if let Some(parent) = storage_path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create parent directory for bookmarks: {}", e))?;
         }
@@ -104,8 +108,18 @@ impl BookmarkStore {
         let content = fs::read_to_string(&self.storage_path)
             .map_err(|e| format!("Failed to read bookmarks file: {}", e))?;
 
-        let parsed: Vec<Bookmark> = serde_json::from_str(&content)
+        let mut parsed: Vec<Bookmark> = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse bookmarks JSON: {}", e))?;
+
+        let mut identifiers = HashSet::with_capacity(parsed.len());
+        for bookmark in &mut parsed {
+            if bookmark.id.trim().is_empty() || !identifiers.insert(bookmark.id.clone()) {
+                return Err("Bookmarks contain an empty or duplicate identifier".to_string());
+            }
+            bookmark.url = validate_web_url(&bookmark.url)
+                .map_err(|error| format!("Invalid saved bookmark: {error}"))?;
+            bookmark.title = normalize_title(&bookmark.title)?;
+        }
 
         self.bookmarks = parsed;
         Ok(())
@@ -120,26 +134,32 @@ impl BookmarkStore {
         let serialized = serde_json::to_string_pretty(&self.bookmarks)
             .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
 
-        // Why: Generate a unique staging temporary file to prevent race conditions during concurrent execution.
+        // Stage in the destination directory so rename stays on the same filesystem.
         let temp_filename = format!("{}.tmp.{}", BOOKMARKS_FILE_NAME, Uuid::new_v4());
         let temp_path = match self.storage_path.parent() {
             Some(parent) => parent.join(temp_filename),
             None => PathBuf::from(temp_filename),
         };
 
-        {
-            let mut file = File::create(&temp_path)
+        let persist_result = (|| {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp_path)
                 .map_err(|e| format!("Failed to create temporary bookmark file: {}", e))?;
             file.write_all(serialized.as_bytes())
                 .map_err(|e| format!("Failed to write bookmark payload: {}", e))?;
             file.sync_all()
                 .map_err(|e| format!("Failed to sync bookmark file to storage: {}", e))?;
+            drop(file);
+            fs::rename(&temp_path, &self.storage_path)
+                .map_err(|e| format!("Failed to atomically replace bookmark file: {}", e))
+        })();
+
+        if persist_result.is_err() {
+            let _ = fs::remove_file(&temp_path);
         }
-
-        fs::rename(&temp_path, &self.storage_path)
-            .map_err(|e| format!("Failed to atomically replace bookmark file: {}", e))?;
-
-        Ok(())
+        persist_result
     }
 
     /// Populates curated default financial and secure search bookmarks.
@@ -185,21 +205,39 @@ impl BookmarkStore {
     }
 
     /// Adds a new bookmark and immediately writes changes to disk.
-    pub fn add(&mut self, title: impl Into<String>, url: impl Into<String>, category: BookmarkCategory) -> Result<Bookmark, String> {
+    pub fn add(
+        &mut self,
+        title: impl Into<String>,
+        url: impl Into<String>,
+        category: BookmarkCategory,
+    ) -> Result<Bookmark, String> {
         let bookmark = Bookmark::new(title, url, category)?;
         self.bookmarks.push(bookmark.clone());
-        self.persist_to_disk()?;
+        if let Err(error) = self.persist_to_disk() {
+            self.bookmarks.pop();
+            return Err(error);
+        }
         Ok(bookmark)
     }
 
     /// Deletes a bookmark by its unique ID.
     pub fn remove(&mut self, id: &str) -> Result<bool, String> {
-        let initial_len = self.bookmarks.len();
-        self.bookmarks.retain(|b| b.id != id);
-        let removed = self.bookmarks.len() < initial_len;
-        if removed {
-            self.persist_to_disk()?;
+        let Some(index) = self.bookmarks.iter().position(|bookmark| bookmark.id == id) else {
+            return Ok(false);
+        };
+        let bookmark = self.bookmarks.remove(index);
+        if let Err(error) = self.persist_to_disk() {
+            self.bookmarks.insert(index, bookmark);
+            return Err(error);
         }
-        Ok(removed)
+        Ok(true)
     }
+}
+
+fn normalize_title(title: &str) -> Result<String, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("A bookmark title is required".to_string());
+    }
+    Ok(title.to_owned())
 }

@@ -1,12 +1,13 @@
-//! Screen Scraper & Screen Recording Defense
+//! Best-effort exclusion from supported Windows screen capture APIs.
 //!
-//! Applies Win32 `SetWindowDisplayAffinity` to exclude the window from DWM capture,
-//! preventing screen scrapers, Snipping Tool, OBS, and remote desktop viewing from observing content.
+//! Display affinity is checked at startup, but is not a boundary against malware or cameras.
 
-use windows::Win32::Foundation::{GetLastError, HWND};
-use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WINDOW_DISPLAY_AFFINITY};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowDisplayAffinity, SetWindowDisplayAffinity, WINDOW_DISPLAY_AFFINITY,
+};
 
-use crate::config::{WDA_EXCLUDEFROMCAPTURE, WDA_MONITOR};
+use crate::config::WDA_EXCLUDEFROMCAPTURE;
 
 /// Manages window capture exclusion policies.
 pub struct CaptureProtector;
@@ -14,8 +15,8 @@ pub struct CaptureProtector;
 impl CaptureProtector {
     /// Applies capture exclusion to the specified window handle.
     ///
-    /// Tries `WDA_EXCLUDEFROMCAPTURE` first (Windows 10 2004+ / Windows 11).
-    /// If that fails (e.g. on older builds), falls back to `WDA_MONITOR`.
+    /// Requires `WDA_EXCLUDEFROMCAPTURE` (Windows 10 2004+ / Windows 11) and checks
+    /// the applied value. Unsupported systems fail instead of silently reducing protection.
     ///
     /// # Complexity
     /// - Time: O(1)
@@ -25,23 +26,16 @@ impl CaptureProtector {
             return Err("Invalid window handle passed to CaptureProtector".to_string());
         }
 
-        // Attempt modern WDA_EXCLUDEFROMCAPTURE
-        let primary_affinity = WINDOW_DISPLAY_AFFINITY(WDA_EXCLUDEFROMCAPTURE);
-        let primary_result = unsafe { SetWindowDisplayAffinity(hwnd, primary_affinity) };
-        if primary_result.is_ok() {
-            return Ok(());
+        unsafe { SetWindowDisplayAffinity(hwnd, WINDOW_DISPLAY_AFFINITY(WDA_EXCLUDEFROMCAPTURE)) }
+            .map_err(|error| format!("Failed to enable capture exclusion: {error}"))?;
+        let mut affinity = 0;
+        unsafe { GetWindowDisplayAffinity(hwnd, &mut affinity) }
+            .map_err(|error| format!("Could not verify capture exclusion: {error}"))?;
+        if affinity != WDA_EXCLUDEFROMCAPTURE {
+            return Err(format!(
+                "Capture exclusion was not applied (display affinity: {affinity:#x})"
+            ));
         }
-
-        // Why: Legacy fallback for pre-2004 Windows 10 releases.
-        let fallback_affinity = WINDOW_DISPLAY_AFFINITY(WDA_MONITOR);
-        let fallback_result = unsafe { SetWindowDisplayAffinity(hwnd, fallback_affinity) };
-        if fallback_result.is_ok() {
-            Ok(())
-        } else {
-            Err(format!(
-                "Failed to apply window display affinity: Win32 Error {:?}",
-                unsafe { GetLastError() }
-            ))
-        }
+        Ok(())
     }
 }

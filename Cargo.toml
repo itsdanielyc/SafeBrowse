@@ -3,7 +3,10 @@ name = "safebrowse"
 version = "0.1.0"
 edition = "2021"
 authors = ["SafeBrowse Contributors"]
-description = "High-assurance open-source alternative to Bitdefender SafePay for Windows"
+description = "Windows browser with capture exclusion for streaming and screen sharing"
+license = "MIT"
+repository = "https://github.com/itsdanielyc/SafeBrowse"
+homepage = "https://github.com/itsdanielyc/SafeBrowse"
 
 [lib]
 name = "safebrowse"
@@ -13,18 +16,37 @@ path = "src/lib.rs"
 name = "safebrowse"
 path = "src/main.rs"
 
+[[bin]]
+name = "safebrowse-maintenance"
+path = "src/bin/safebrowse-maintenance.rs"
+
 [dependencies]
+base64 = "0.22.1"
 tao = "0.37.0"
 wry = "0.56.1"
+webview2-com = "0.38.2"
+webview2-core = { package = "windows-core", version = "0.61.2" }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Accessibility",
     "Win32_Security",
     "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_Storage_FileSystem",
+    "Win32_Storage_Packaging_Appx",
     "Win32_Graphics_Gdi",
+    "Win32_Globalization",
     "Win32_System_LibraryLoader",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Shell",
     "Win32_System_Com",
     "Win32_System_SystemServices",
     "Win32_System_StationsAndDesktops",
@@ -36,3 +58,6 @@ uuid = { version = "1.10", features = ["v4"] }
 directories = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.5"
+
+[build-dependencies]
+embed-resource = "3"

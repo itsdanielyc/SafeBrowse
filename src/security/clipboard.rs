@@ -1,14 +1,16 @@
-//! Clipboard Sanitization & Memory Clearing
+//! Clearing the current Windows clipboard at isolated-session boundaries.
 //!
-//! Enforces clipboard hygiene by providing explicit clearing operations on session
-//! startup and termination to prevent sensitive banking credentials, credit card numbers,
-//! and OTP codes from leaking across logon desktops.
+//! Does not erase clipboard history, cloud synchronization, or copies held by other processes.
 
-use windows::Win32::Foundation::{GetLastError, HWND};
+use std::time::Duration;
+use windows::Win32::Foundation::HWND;
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard};
 
 /// Provides operations for secure clipboard management.
 pub struct ClipboardBroker;
+
+const CLIPBOARD_OPEN_ATTEMPTS: u32 = 5;
+const CLIPBOARD_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 
 impl ClipboardBroker {
     /// Clears the Windows clipboard for the current window station.
@@ -17,24 +19,21 @@ impl ClipboardBroker {
     /// - Time: O(1)
     /// - Space: O(1)
     pub fn purge_clipboard(hwnd: Option<HWND>) -> Result<(), String> {
-        let window_handle = hwnd.unwrap_or(HWND(std::ptr::null_mut()));
-
-        // Why: OpenClipboard locks clipboard for exclusive access by the calling thread.
-        let open_res = unsafe { OpenClipboard(Some(window_handle)) };
-        if open_res.is_err() {
-            return Err(format!(
-                "Failed to open clipboard for purging: Win32 Error {:?}",
-                unsafe { GetLastError() }
-            ));
+        // Clipboard managers briefly hold the lock; bounded retries avoid spurious launch failures.
+        for attempt in 1..=CLIPBOARD_OPEN_ATTEMPTS {
+            match unsafe { OpenClipboard(hwnd) } {
+                Ok(()) => break,
+                Err(error) if attempt == CLIPBOARD_OPEN_ATTEMPTS => {
+                    return Err(format!("Could not open the Windows clipboard: {error}"));
+                }
+                Err(_) => std::thread::sleep(CLIPBOARD_RETRY_INTERVAL),
+            }
         }
 
         let empty_res = unsafe { EmptyClipboard() };
         let close_res = unsafe { CloseClipboard() };
 
-        if empty_res.is_err() || close_res.is_err() {
-            return Err("Failed to empty or close clipboard".to_string());
-        }
-
-        Ok(())
+        empty_res.map_err(|error| format!("Could not empty the Windows clipboard: {error}"))?;
+        close_res.map_err(|error| format!("Could not release the Windows clipboard: {error}"))
     }
 }

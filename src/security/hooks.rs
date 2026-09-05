@@ -3,17 +3,17 @@
 //! Intercepts sensitive keys like PrintScreen (VK_SNAPSHOT) to prevent unauthorized
 //! screenshot capture on the secure desktop, and registers desktop toggle shortcuts.
 
-use windows::Win32::Foundation::{GetLastError, HWND};
+use windows::Win32::Foundation::{ERROR_HOTKEY_ALREADY_REGISTERED, HWND};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
+    RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_D,
     VK_SNAPSHOT,
 };
 
 /// Unique identifier for the PrintScreen consumption hotkey.
-pub const HOTKEY_PRINTSCREEN_ID: i32 = 0xBEEF;
+pub const HOTKEY_PRINTSCREEN_ID: i32 = 1;
 
-/// Unique identifier for the emergency switch-back hotkey (Ctrl + Alt + D).
-pub const HOTKEY_SWITCH_DESKTOP_ID: i32 = 0xCAFE;
+/// Unique identifier for the supervisor's session-wide desktop toggle (Ctrl + Alt + D).
+pub const HOTKEY_SWITCH_DESKTOP_ID: i32 = 2;
 
 /// Manages system hotkey registration and defensive key interception.
 pub struct HotkeyInterceptor {
@@ -38,57 +38,47 @@ impl HotkeyInterceptor {
     /// - Time: O(1)
     /// - Space: O(1)
     pub fn register_printscreen_blocker(&mut self) -> Result<(), String> {
+        if self.printscreen_registered {
+            return Ok(());
+        }
         if self.hwnd.0.is_null() {
             return Err("Invalid window handle".to_string());
         }
 
-        // Intercept bare VK_SNAPSHOT (PrintScreen)
-        let result = unsafe {
+        unsafe {
             RegisterHotKey(
                 Some(self.hwnd),
                 HOTKEY_PRINTSCREEN_ID,
                 MOD_NOREPEAT,
                 VK_SNAPSHOT.0 as u32,
             )
-        };
-
-        if result.is_ok() {
-            self.printscreen_registered = true;
-            Ok(())
-        } else {
-            Err(format!(
-                "Failed to register PrintScreen hotkey: Win32 Error {:?}",
-                unsafe { GetLastError() }
-            ))
         }
+        .map_err(|error| hotkey_registration_error("PrintScreen", error))?;
+        self.printscreen_registered = true;
+        Ok(())
     }
 
-    /// Registers the desktop toggle hotkey (Ctrl + Alt + D).
+    /// Registers Ctrl+Alt+D once in the supervisor; workers must not claim the same global chord.
     pub fn register_desktop_toggle_hotkey(&mut self) -> Result<(), String> {
+        if self.switch_registered {
+            return Ok(());
+        }
         if self.hwnd.0.is_null() {
             return Err("Invalid window handle".to_string());
         }
 
         let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_NOREPEAT.0);
-        // 'D' key is virtual key code 0x44
-        let result = unsafe {
+        unsafe {
             RegisterHotKey(
                 Some(self.hwnd),
                 HOTKEY_SWITCH_DESKTOP_ID,
                 modifiers,
-                0x44,
+                VK_D.0 as u32,
             )
-        };
-
-        if result.is_ok() {
-            self.switch_registered = true;
-            Ok(())
-        } else {
-            Err(format!(
-                "Failed to register desktop switch hotkey: Win32 Error {:?}",
-                unsafe { GetLastError() }
-            ))
         }
+        .map_err(|error| hotkey_registration_error("Ctrl+Alt+D", error))?;
+        self.switch_registered = true;
+        Ok(())
     }
 
     /// Unregisters all active hotkeys.
@@ -108,8 +98,42 @@ impl HotkeyInterceptor {
     }
 }
 
+/// Preserves the API's captured error, with an actionable explanation for shortcut conflicts.
+fn hotkey_registration_error(shortcut: &str, error: windows::core::Error) -> String {
+    if error.code() == windows::core::HRESULT::from_win32(ERROR_HOTKEY_ALREADY_REGISTERED.0) {
+        return format!("{shortcut} is already assigned to another application");
+    }
+    format!("Could not register {shortcut}: {error}")
+}
+
 impl Drop for HotkeyInterceptor {
     fn drop(&mut self) {
         self.unregister_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_shortcut_conflicts_have_an_actionable_message() {
+        let error = windows::core::Error::from(windows::core::HRESULT::from_win32(
+            ERROR_HOTKEY_ALREADY_REGISTERED.0,
+        ));
+        assert_eq!(
+            hotkey_registration_error("Ctrl+Alt+D", error),
+            "Ctrl+Alt+D is already assigned to another application"
+        );
+    }
+
+    #[test]
+    fn invalid_window_registration_does_not_claim_hotkey_ownership() {
+        let mut interceptor = HotkeyInterceptor::new(HWND::default());
+        assert!(interceptor.register_desktop_toggle_hotkey().is_err());
+        assert!(interceptor.register_printscreen_blocker().is_err());
+        assert!(!interceptor.switch_registered);
+        assert!(!interceptor.printscreen_registered);
+        interceptor.unregister_all();
     }
 }

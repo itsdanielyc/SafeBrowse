@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SafeBrowse session</title>
+<style>
+__COMMON_CSS__
+html, body { height: 46px; overflow: hidden; user-select: none; }
+body { display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: center; gap: 16px; padding: 0 12px; background: #f0f0f0; border-top: 1px solid #d8d8d8; font-size: 12px; }
+.taskbar-start { display: flex; align-items: center; gap: 20px; min-width: 0; }
+.taskbar-brand { display: grid; place-items: center; width: 44px; height: 38px; pointer-events: none; }
+.taskbar-brand img { display: block; width: 28px; height: 28px; object-fit: contain; }
+.desktop-button { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 10px; background: #fafafa; font-size: 12px; }
+.session-state { display: flex; align-items: center; gap: 7px; color: #555; white-space: nowrap; }
+.session-state::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #54846c; }
+.session-state.recording { color: #a4261c; font-weight: 600; }
+.session-state.recording::before { background: #b42318; }
+.tray { display: flex; align-items: center; justify-self: end; gap: 18px; color: #505050; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.battery { display: flex; align-items: center; gap: 4px; }
+#language { border: 0; border-radius: 4px; background: transparent; min-width: 38px; height: 32px; padding: 0 6px; font-size: 12px; }
+#language:hover, #language[aria-expanded="true"] { background: #dedede; }
+.clock { text-align: right; font-size: 11px; line-height: 1.4; }
+@media(max-width: 1000px) { .session-state { overflow: hidden; text-overflow: ellipsis; display: block; } .session-state::before { display: none; } .taskbar-start { gap: 10px; } }
+@media(max-width: 700px) { body { gap: 12px; } .tray { gap: 9px; } .session-state, .battery { display: none; } }
+@media(max-width: 460px) { .desktop-button { gap: 0; padding: 3px 8px; } #desktop-label { display: none; } .tray { gap: 3px; } }
+</style></head>
+<body>
+<div class="taskbar-start">
+<button class="button desktop-button" id="desktop"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8m-4-4v4"/></svg><span id="desktop-label">Back to desktop</span></button>
+<span class="session-state" id="session-state" hidden></span>
+</div>
+<div class="taskbar-brand"><img src="__BRAND_MARK__" alt="SafeBrowse" draggable="false"></div>
+<div class="tray"><button id="language" type="button" title="Change input language" aria-label="Change input language" aria-haspopup="dialog" aria-expanded="false"></button><span class="battery" id="battery"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 10v4"/></svg><span id="battery-value"></span></span><time class="clock" id="clock"></time></div>
+<script>
+__COMMON_JAVASCRIPT__
+const presentation = __PRESENTATION_JSON__;
+const session = presentation.session;
+const status = document.getElementById('session-state');
+status.textContent = session.capture_allowed ? 'Recording allowed · Testing only' : 'Desktop mode';
+status.hidden = session.is_isolated && !session.capture_allowed;
+status.classList.toggle('recording', session.capture_allowed);
+document.getElementById('desktop-label').textContent = session.is_isolated ? 'Back to desktop' : 'Minimize';
+document.getElementById('desktop').setAttribute('aria-label', session.is_isolated ? 'Back to desktop' : 'Minimize');
+document.getElementById('desktop').addEventListener('click', () => postIpc({ type: session.is_isolated ? 'SWITCH_DESKTOP' : 'MINIMIZE' }));
+window.updateLanguageUI = language => { document.getElementById('language').textContent = String(language); };
+window.setLanguagePickerOpen = open => document.getElementById('language').setAttribute('aria-expanded', String(Boolean(open)));
+document.getElementById('language').addEventListener('click', () => postIpc({ type: 'TOGGLE_LANGUAGE_PICKER' }));
+window.updateBatteryUI = function(_trustedIcon, percentage) {
+    const known = Number.isFinite(percentage) && percentage >= 0 && percentage <= 100;
+    document.getElementById('battery').hidden = !known;
+    document.getElementById('battery-value').textContent = known ? percentage + '%' : '';
+};
+function updateClock() {
+    const now = new Date();
+    const clock = document.getElementById('clock');
+    clock.replaceChildren(document.createTextNode(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })), document.createElement('br'), document.createTextNode(now.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })));
+    clock.dateTime = now.toISOString();
+}
+window.updateLanguageUI(presentation.language);
+window.updateBatteryUI(null, presentation.battery_percentage);
+updateClock();
+setInterval(updateClock, 1000);
+setInterval(() => postIpc({ type: 'QUERY_BATTERY' }), 60000);
+setInterval(() => postIpc({ type: 'QUERY_INPUT_LANGUAGE' }), 5000);
+notifyReady();
+</script></body></html>

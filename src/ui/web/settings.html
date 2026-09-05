@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Settings — SafeBrowse</title>
+<style>
+__COMMON_CSS__
+.intro { margin-bottom: 28px; }
+.section { margin-bottom: 28px; }
+.section h2 { margin-bottom: 12px; }
+.settings-list { background: #fff; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 20px; }
+.setting + .setting { border-top: 1px solid #ededed; }
+.setting p { margin: 4px 0 0; color: var(--muted); font-size: 12px; max-width: 570px; }
+.setting strong { font-weight: 600; font-size: 13px; }
+.value { flex-shrink: 0; font-size: 12px; padding: 3px 8px; border: 1px solid #dedede; border-radius: 4px; background: #fafafa; }
+.value.risk { color: #a4261c; background: #fff0ef; border-color: #edc2bd; }
+.policy-select { min-width: 144px; padding: 7px 9px; border: 1px solid #bdbdbd; border-radius: 4px; background: #fff; font: inherit; font-size: 12px; }
+.toggle-control { display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 12px; }
+.toggle-control input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.site-form { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto auto; gap: 8px; margin: 16px 0; align-items: end; }
+.site-form label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+.site-form input { width: 100%; min-width: 0; height: 34px; }
+.site-form .button { height: 34px; }
+.site-rule { display: grid; grid-template-columns: minmax(120px, 1fr) 130px 144px auto auto; align-items: center; gap: 12px; padding: 14px 16px; }
+.site-rule + .site-rule { border-top: 1px solid #ededed; }
+.site-origin { font-size: 12px; overflow-wrap: anywhere; }
+.permission-name { font-size: 12px; color: var(--muted); }
+.empty-permissions { padding: 22px 16px; color: var(--muted); font-size: 13px; margin: 0; }
+.permissions-note { font-size: 12px; color: var(--muted); }
+.reload-notice { display: flex; align-items: center; gap: 16px; padding: 12px 16px; margin-top: 12px; background: #f1f4f1; border: 1px solid var(--line); border-radius: 6px; }
+.reload-notice[hidden] { display: none; }
+.reload-notice p { margin: 0; font-size: 12px; overflow-wrap: anywhere; flex: 1; }
+.reload-notice .button { flex-shrink: 0; }
+@media(max-width: 780px) { .site-form { grid-template-columns: 1fr 1fr; } .site-rule { grid-template-columns: minmax(120px, 1fr) 130px; } .site-form .policy-select { min-width: 0; } }
+.about { display: flex; gap: 16px; padding-top: 4px; }
+.about-icon { color: var(--accent); background: #e7eee9; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #d4e0d8; border-radius: 8px; flex-shrink: 0; }
+.about p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.shortcuts { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+.shortcuts div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e6e6e6; padding-bottom: 8px; }
+.shortcuts dt, .shortcuts dd { margin: 0; font-size: 12px; }
+kbd { font: inherit; color: #666; }
+@media(max-width: 580px) { .setting { align-items: flex-start; gap: 10px; padding: 15px; } .shortcuts { grid-template-columns: 1fr; } }
+</style></head>
+<body><main class="page">
+<header class="intro"><p class="eyebrow">SafeBrowse</p><h1>Settings</h1><p class="muted">Your session and browser protections.</p></header>
+<section class="section" aria-labelledby="session-heading"><h2 id="session-heading">Current session</h2><div class="settings-list">
+    <div class="setting"><div><strong>Desktop</strong><p id="desktop-description"></p></div><span class="value" id="desktop-value"></span></div>
+    <div class="setting"><div><strong>Screen recording</strong><p id="capture-description"></p></div><span class="value" id="capture-value"></span></div>
+    <div class="setting"><div><strong>Browser data</strong><p id="profile-description"></p></div><span class="value" id="profile-value"></span></div>
+</div></section>
+<section class="section" aria-labelledby="browser-heading"><h2 id="browser-heading">Browser behavior</h2><div class="settings-list">
+    <div class="setting"><div><strong>On-screen keyboard</strong><p>Enter text without using your physical keyboard. Select a field before opening the keyboard.</p></div><button class="button" data-command="TOGGLE_OSK" aria-label="Show or hide on-screen keyboard">Show / hide</button></div>
+    <div class="setting"><div><strong>Pop-up windows</strong><p>Choose the default for websites without a saved exception. Allowed popups open as SafeBrowse tabs.</p></div><select class="policy-select" id="popup-policy" aria-label="Default popup policy"><option value="ask">Ask every time</option><option value="allow">Always allow</option><option value="block">Always block</option></select></div>
+    <div class="setting"><div><strong>Downloads</strong><p>Choose whether websites may save files. Downloaded files remain on your computer after the session ends.</p></div><select class="policy-select" id="download-policy" aria-label="Downloads" disabled><option value="" disabled selected>Loading…</option><option value="ask">Ask every time</option><option value="block">Disabled</option><option value="allow">Always allowed</option></select></div>
+    <div class="setting"><div><strong>Printing</strong><p>Enable SafeBrowse’s Print button and Ctrl+P. Website print requests are suppressed where possible; this is not a complete printing block. Printed output is outside session cleanup.</p></div><label class="toggle-control"><input type="checkbox" role="switch" id="printing-enabled" aria-label="Enable SafeBrowse printing controls" disabled><span id="printing-state">Loading…</span></label></div>
+</div></section>
+<section class="section" aria-labelledby="permissions-heading"><h2 id="permissions-heading">Site permissions</h2>
+<p class="muted">Review saved decisions for each website. Camera, microphone, location and other supported permissions ask before access unless you save a choice.</p>
+<form id="site-rule-form" class="site-form">
+    <label>Website address<input class="field" id="site-origin" type="url" placeholder="https://example.com" required autocomplete="off" spellcheck="false"></label>
+    <label>Permission<select class="policy-select" id="site-permission"></select></label>
+    <label>Decision<select class="policy-select" id="site-decision"><option value="ask">Ask every time</option><option value="allow">Always allow</option><option value="block">Always block</option></select></label>
+    <button type="submit" class="button">Save</button>
+</form>
+<div class="settings-list" id="site-rules" aria-label="Saved site permissions"><p class="empty-permissions">No saved site permissions.</p></div>
+<div class="reload-notice" id="reload-notice" hidden><p id="reload-description"></p><button class="button" type="button" id="reload-changed-site">Reload tabs</button></div>
+<p class="permissions-note">Saved choices apply to the exact website origin, including its port, and remain between sessions. Reset removes an exception. After revoking access, use Reload tabs or close the website to end access already in use. Reloading discards unsaved form input.</p>
+</section>
+<section class="section" aria-labelledby="shortcuts-heading"><h2 id="shortcuts-heading">Keyboard shortcuts</h2><dl class="shortcuts">
+    <div><dt>Address bar</dt><dd><kbd>Ctrl + L</kbd></dd></div><div><dt>New tab</dt><dd><kbd>Ctrl + T</kbd></dd></div>
+    <div><dt>Close tab</dt><dd><kbd>Ctrl + W</kbd></dd></div><div><dt>Next tab</dt><dd><kbd>Ctrl + Tab</kbd></dd></div>
+    <div><dt>Reload page</dt><dd><kbd>Ctrl + R</kbd></dd></div><div><dt>Bookmark page</dt><dd><kbd>Ctrl + D</kbd></dd></div>
+</dl></section>
+<section class="about" aria-label="About SafeBrowse"><div class="about-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.5 3.1 7.5 7.5 9.5 4.4-2 7.5-5 7.5-9.5V6Z"/><path d="m8.5 11.5 2.5 2.5 4.5-5"/></svg></div><div><h2>SafeBrowse <span id="version"></span></h2><p>Open source · MIT license · Community project</p><p>Browser engine: Microsoft Edge WebView2 (Chromium). Uses the installed WebView2 Runtime.</p><p>Experimental software. Security protections are limited by Windows and the browser runtime.</p></div></section>
+<div id="status" class="status" role="status" aria-live="polite"></div>
+</main><script>
+__COMMON_JAVASCRIPT__
+const session = __PRESENTATION_JSON__;
+function setText(id, text) { document.getElementById(id).textContent = text; }
+setText('desktop-value', session.is_isolated ? 'Isolated' : 'Standard desktop');
+setText('desktop-description', session.is_isolated ? 'This window runs on a separate Windows desktop.' : 'This session runs on your normal Windows desktop without desktop isolation.');
+setText('capture-value', session.capture_allowed ? 'Allowed · Testing' : 'Excluded');
+document.getElementById('capture-value').classList.toggle('risk', session.capture_allowed);
+setText('capture-description', session.capture_allowed ? 'Security risk: screenshots and recordings can contain sensitive information. If this is a production app, stop using it.' : 'SafeBrowse requests exclusion from supported Windows screen-capture tools. This is not a guarantee against every capture method.');
+setText('profile-value', session.temporary_profile ? 'Temporary' : 'Persistent');
+setText('profile-description', session.temporary_profile ? 'Cookies and browser storage use a temporary session profile. Bookmarks are saved separately.' : 'Cookies and browser storage are retained in this profile. Bookmarks are saved separately.');
+setText('version', session.version);
+window.showStatus = function(message, isError = false) { const status = document.getElementById('status'); status.textContent = String(message); status.dataset.error = String(Boolean(isError)); };
+const permissionLabels = {
+    popups: 'Pop-up windows', camera: 'Camera', microphone: 'Microphone', location: 'Location',
+    notifications: 'Notifications', clipboard_read: 'Read clipboard', other_sensors: 'Motion sensors',
+    local_fonts: 'Local fonts', midi_system_exclusive: 'MIDI devices', window_management: 'Window management', autoplay: 'Automatic playback'
+};
+const decisionLabels = { ask: 'Ask every time', allow: 'Always allow', block: 'Always block' };
+function makeOptions(select, labels) {
+    Object.entries(labels).forEach(([value, label]) => {
+        const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option);
+    });
+}
+makeOptions(document.getElementById('site-permission'), permissionLabels);
+let changedSiteOrigin = null;
+function offerSiteReload(origin) {
+    changedSiteOrigin = origin;
+    document.getElementById('reload-description').textContent = `To apply changed permissions to active pages from ${origin}, reload their tabs. Unsaved form input will be discarded.`;
+    document.getElementById('reload-notice').hidden = false;
+}
+document.getElementById('reload-changed-site').addEventListener('click', () => {
+    if (changedSiteOrigin) postIpc({ type: 'RELOAD_SITE_TABS', origin: changedSiteOrigin });
+});
+document.getElementById('popup-policy').addEventListener('change', event => postIpc({ type: 'SET_POPUP_POLICY', decision: event.target.value }));
+document.getElementById('download-policy').addEventListener('change', event => {
+    if (!event.target.disabled) postIpc({ type: 'SET_DOWNLOAD_POLICY', decision: event.target.value });
+});
+document.getElementById('printing-enabled').addEventListener('change', event => {
+    if (!event.target.disabled) postIpc({ type: 'SET_PRINTING_ENABLED', enabled: event.target.checked });
+});
+document.getElementById('site-rule-form').addEventListener('submit', event => {
+    event.preventDefault();
+    postIpc({ type: 'SET_SITE_PERMISSION', origin: document.getElementById('site-origin').value.trim(), permission: document.getElementById('site-permission').value, decision: document.getElementById('site-decision').value });
+});
+window.updatePermissions = function(snapshot) {
+    document.getElementById('popup-policy').value = snapshot.popup_default;
+    const downloadPolicy = document.getElementById('download-policy');
+    downloadPolicy.value = ['ask', 'block', 'allow'].includes(snapshot.downloads_default) ? snapshot.downloads_default : 'ask';
+    downloadPolicy.disabled = false;
+    const printingEnabled = document.getElementById('printing-enabled');
+    printingEnabled.checked = snapshot.printing_enabled === true;
+    printingEnabled.disabled = false;
+    setText('printing-state', printingEnabled.checked ? 'Enabled' : 'Disabled');
+    const fragment = document.createDocumentFragment();
+    (snapshot.site_rules || []).forEach(rule => {
+        const row = document.createElement('div'); row.className = 'site-rule';
+        const origin = document.createElement('strong'); origin.className = 'site-origin'; origin.textContent = rule.origin;
+        const name = document.createElement('span'); name.className = 'permission-name'; name.textContent = permissionLabels[rule.permission] || rule.permission;
+        const decision = document.createElement('select'); decision.className = 'policy-select'; makeOptions(decision, decisionLabels); decision.value = rule.decision;
+        decision.setAttribute('aria-label', `${name.textContent} for ${rule.origin}`);
+        decision.addEventListener('change', () => { offerSiteReload(rule.origin); postIpc({ type: 'SET_SITE_PERMISSION', origin: rule.origin, permission: rule.permission, decision: decision.value }); });
+        const reset = document.createElement('button'); reset.className = 'button'; reset.type = 'button'; reset.textContent = 'Reset'; reset.setAttribute('aria-label', `Reset ${name.textContent} for ${rule.origin}`);
+        reset.addEventListener('click', () => { offerSiteReload(rule.origin); postIpc({ type: 'RESET_SITE_PERMISSION', origin: rule.origin, permission: rule.permission }); });
+        const reload = document.createElement('button'); reload.className = 'button'; reload.type = 'button'; reload.textContent = 'Reload tabs'; reload.setAttribute('aria-label', `Reload all tabs from ${rule.origin}`);
+        reload.addEventListener('click', () => postIpc({ type: 'RELOAD_SITE_TABS', origin: rule.origin }));
+        row.append(origin, name, decision, reset, reload); fragment.append(row);
+    });
+    if (!fragment.childNodes.length) {
+        const empty = document.createElement('p'); empty.className = 'empty-permissions'; empty.textContent = 'No saved site permissions.'; fragment.append(empty);
+    }
+    document.getElementById('site-rules').replaceChildren(fragment);
+};
+bindCommandButtons();
+notifyReady();
+</script></body></html>

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Return to SafeBrowse</title><style>
+__COMMON_CSS__
+html, body { width: 100%; height: 100%; background: #f4f4f4; }
+.return-button { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 16px; background: #fafafa; border: 1px solid #d3d3d3; border-radius: 5px; text-align: left; }
+.return-button:hover { background: #ededed; }
+.return-button svg { color: var(--accent); }
+strong { display: block; font-weight: 600; font-size: 13px; }
+span { display: block; color: #666; font-size: 12px; margin-top: 3px; }
+</style></head><body>
+<button class="return-button" data-command="SWITCH_TO_SAFE_DESKTOP"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.5 3.1 7.5 7.5 9.5 4.4-2 7.5-5 7.5-9.5V6Z"/><path d="m8.5 11.5 2.5 2.5 4.5-5"/></svg><div><strong>Return to SafeBrowse</strong><span>Your session is still open</span></div></button>
+<script>__COMMON_JAVASCRIPT__
+bindCommandButtons();
+</script></body></html>

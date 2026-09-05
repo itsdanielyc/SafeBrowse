@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-/// Name of the isolated Win32 desktop created inside the interactive window station (`WinSta0`).
+/// Namespace prefix for per-session desktop names; a fresh UUID is appended before creation.
 pub const SAFE_DESKTOP_NAME: &str = "SafeBrowseDesktop";
 
 /// Name of the standard interactive Windows desktop.
@@ -28,8 +28,7 @@ pub const BOOKMARKS_FILE_NAME: &str = "bookmarks.json";
 
 /// Win32 `SetWindowDisplayAffinity` constant for `WDA_EXCLUDEFROMCAPTURE`.
 /// Available on Windows 10 Version 2004 (Build 19041) and newer.
-/// Instructs the Desktop Window Manager (DWM) to render this window completely black
-/// to any screen capture APIs (GDI `BitBlt`, Snipping Tool, OBS, Teams/Discord screenshare).
+/// Requests exclusion from supported DWM capture APIs; it is not a security boundary.
 pub const WDA_EXCLUDEFROMCAPTURE: u32 = 0x0000_0011;
 
 /// Fallback Win32 `WDA_MONITOR` affinity for legacy Windows 10 builds.
@@ -38,17 +37,28 @@ pub const WDA_MONITOR: u32 = 0x0000_0001;
 /// Desktop Access Mask: Standard rights required to switch, create, and interact with a desktop.
 pub const SAFE_DESKTOP_ACCESS_MASK: u32 = 0x01FF; // DESKTOP_ALL_ACCESS
 
+/// Win32 desktop access right required strictly for desktop switching (`DESKTOP_SWITCHDESKTOP`).
+pub const DESKTOP_SWITCHDESKTOP_ACCESS: u32 = 0x0100;
+
+/// Maximum retry attempts when calling `SwitchDesktop` to absorb OS focus transition latency.
+pub const DESKTOP_SWITCH_MAX_RETRIES: u32 = 10;
+
+/// Delay between successive `SwitchDesktop` retry attempts.
+pub const DESKTOP_SWITCH_RETRY_DELAY: Duration = Duration::from_millis(15);
+
 /// Timeout interval for watchdog liveness polling across desktop boundaries.
 pub const WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-/// Maximum duration to wait for graceful worker process termination before forceful kill.
+/// Maximum wait for a worker after forced termination or failed authorization.
 pub const WORKER_TERMINATION_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Browser automation suppression switches passed to Chromium / WebView2.
-/// Ensures the browser does not expose `navigator.webdriver = true` or automation telemetry.
-pub const CHROMIUM_ARGS_SECURITY: &[&str] = &[
-    "--disable-blink-features=AutomationControlled",
-    "--disable-features=IsolateOrigins,site-per-process",
-    "--no-default-browser-check",
-    "--disable-component-update",
-];
+/// Lets released WebView2 processes unlock their temporary files before reporting a remnant.
+pub const EPHEMERAL_PROFILE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Orderly worker exit includes profile cleanup before the final clipboard purge.
+pub const WORKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration =
+    EPHEMERAL_PROFILE_CLEANUP_TIMEOUT.saturating_add(WORKER_TERMINATION_TIMEOUT);
+
+/// Browser behavior switches that preserve WebView2's sandbox and isolation defaults.
+pub const CHROMIUM_ARGS_SECURITY: &[&str] =
+    &["--no-default-browser-check", "--disable-print-preview"];

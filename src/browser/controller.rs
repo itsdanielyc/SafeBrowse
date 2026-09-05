@@ -1,13 +1,15 @@
 //! Browser Engine Controller
 //!
-//! Encapsulates WebView2 runtime instantiation, anti-automation flags,
-//! navigation controls, script evaluation, and IPC message routing.
+//! Creates web content without granting remote pages native command access.
 
 use std::sync::{Arc, Mutex};
 use tao::window::Window;
 use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 
+use crate::browser::navigation::{normalize_navigation_input, validate_web_url};
+use crate::browser::printing::WEBSITE_PRINT_GUARD;
 use crate::browser::profile::{ProfileManager, ProfileMode};
+use crate::browser::security::harden_content_view;
 use crate::browser::tabs::TabManager;
 use crate::config::{CHROMIUM_ARGS_SECURITY, DEFAULT_HOMEPAGE_URL};
 
@@ -38,11 +40,9 @@ pub struct BrowserController {
 impl BrowserController {
     /// Initializes a new BrowserController with the specified profile mode.
     ///
-    /// # Complexity
-    /// - Time: O(1)
-    /// - Space: O(1)
+    /// Time: O(N). Space: O(N), where N is the initial address length.
     pub fn new(mode: ProfileMode, initial_url: impl Into<String>) -> Result<Self, String> {
-        let initial_url_str = initial_url.into();
+        let initial_url_str = normalize_navigation_input(&initial_url.into())?;
         let profile_manager = ProfileManager::new(mode)?;
         let tab_manager = Arc::new(Mutex::new(TabManager::new(initial_url_str)));
 
@@ -65,15 +65,13 @@ impl BrowserController {
     }
 
     /// Constructs the Chromium WebView bound to the parent Tao window.
+    /// Keep this controller alive until its returned views have been dropped so
+    /// the profile can be cleaned up after WebView2 releases the storage handles.
     ///
     /// # Complexity
     /// - Time: O(1) (Spawns Edge WebView2 helper processes asynchronously)
     /// - Space: O(1)
-    pub fn create_webview<F>(
-        &self,
-        window: &Window,
-        ipc_dispatcher: F,
-    ) -> Result<WebView, String>
+    pub fn create_webview<F>(&self, window: &Window, _ipc_dispatcher: F) -> Result<WebView, String>
     where
         F: Fn(String) + 'static,
     {
@@ -85,27 +83,41 @@ impl BrowserController {
         let security_args = CHROMIUM_ARGS_SECURITY.join(" ");
 
         let active_url = {
-            let tabs = self.tab_manager.lock().unwrap();
+            let tabs = self
+                .tab_manager
+                .lock()
+                .map_err(|_| "The tab manager is unavailable".to_string())?;
             tabs.active_tab()
                 .map(|t| t.url.clone())
                 .unwrap_or_else(|| DEFAULT_HOMEPAGE_URL.to_string())
         };
 
-        // Why: Configure the webview with full isolation, anti-automation suppression,
-        // and direct IPC routing for the trusted UI and virtual keyboard.
+        // Remote documents must never share the privileged shell IPC bridge.
+        // The callback remains in this API for compatibility with existing callers.
         let builder = WebViewBuilder::new_with_web_context(&mut web_context)
             .with_incognito(is_ephemeral)
-            .with_url(&active_url)
             .with_devtools(false)
-            .with_browser_accelerator_keys(true)
+            .with_browser_accelerator_keys(false)
+            .with_default_context_menus(false)
+            .with_general_autofill_enabled(false)
+            .with_clipboard(false)
             .with_additional_browser_args(security_args)
-            .with_ipc_handler(move |req| {
-                let payload = req.body().clone();
-                ipc_dispatcher(payload);
-            });
+            .with_initialization_script_for_main_only(WEBSITE_PRINT_GUARD, false)
+            .with_navigation_handler(|url| validate_web_url(&url).is_ok())
+            .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
+            .with_download_started_handler(|_, _| false)
+            .with_permission_handler(|_| wry::PermissionResponse::Deny);
 
-        builder
+        let view = builder
             .build(window)
-            .map_err(|e| format!("Failed to initialize WebView2: {}", e))
+            .map_err(|error| format!("Failed to initialize WebView2: {error}"))?;
+        crate::browser::runtime::validate_created_environment(
+            &view,
+            self.profile_manager.data_directory(),
+        )?;
+        harden_content_view(&view)?;
+        view.load_url(&active_url)
+            .map_err(|error| format!("Failed to navigate the browser: {error}"))?;
+        Ok(view)
     }
 }

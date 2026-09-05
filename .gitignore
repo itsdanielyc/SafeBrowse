@@ -1,6 +1,5 @@
 # Rust build targets
 /target
-Cargo.lock
 
 # Editor & OS artifacts
 .vscode/
@@ -16,3 +15,8 @@ ehthumbs.db
 *.tmp.*
 SafeBrowse_Session_*
 SafeBrowse_Test_*
+
+# Local launch videos, presentations, and promotional graphics
+/motion/
+/showcase/
+/showcase-product/

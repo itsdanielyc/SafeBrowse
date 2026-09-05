@@ -1,0 +1,63 @@
+name: Build an attested Windows candidate
+
+# Only an intentional repository workflow dispatch can enter this workflow.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the verified revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+      - name: Build from an isolated committed source export
+        id: candidate
+        run: ./scripts/New-ReleaseCandidate.ps1
+      - name: Retain candidate files for review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-candidate
+          path: ${{ steps.candidate.outputs.distribution-directory }}/*
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      # This job has signing permissions and therefore never checks out or runs project code.
+      - name: Download this run's completed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-candidate
+          path: candidate
+      - name: Attest the candidate archive and provenance files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: candidate/*
+          create-storage-record: false

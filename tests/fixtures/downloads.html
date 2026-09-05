@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>SafeBrowse download test</title>
+<style>body{font:16px/1.6 'Segoe UI',sans-serif;max-width:760px;margin:40px auto;color:#24302c}a,button{font:inherit;margin-right:16px}button{padding:8px}h1{font-size:28px}</style></head>
+<body><h1>SafeBrowse download test</h1><p>These files contain dummy text only. No accounts or credentials are used.</p>
+<p><a href="download-sample.txt" download="sample-receipt.txt">Download sample receipt</a><button id="blob">Download generated text</button></p>
+<p>Ask every time should show a SafeBrowse confirmation. Cancel must save nothing. Disabled must refuse the download. Always allowed may save without that confirmation.</p>
+<p>Approved files remain in Downloads / SafeBrowse after the session closes and are never opened automatically.</p>
+<script>
+document.getElementById('blob').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob(['SafeBrowse generated download test. Dummy data only.\n'], {type:'text/plain'}));
+  const link = document.createElement('a'); link.href = url; link.download = 'generated-test.txt'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+});
+</script></body></html>

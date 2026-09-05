@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>On-screen keyboard — SafeBrowse</title>
+<style>
+__COMMON_CSS__
+html, body { height: 230px; overflow: hidden; user-select: none; }
+body { padding: 6px 12px 10px; background: #ededed; border-top: 1px solid #d0d0d0; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 30px; max-width: 900px; margin: 0 auto 6px; }
+h1 { font-size: 12px; font-weight: 600; margin: 0; }
+body.detached { border: 1px solid #b4b4b4; }
+body.detached header { cursor: move; }
+header .actions { cursor: default; }
+.actions { display: flex; gap: 6px; }
+.actions .button { min-height: 26px; height: 26px; padding: 2px 10px; font-size: 11px; }
+#keys { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 4px; }
+.key-row { display: flex; justify-content: center; gap: 4px; height: 30px; }
+.key { flex: 1; max-width: 62px; min-width: 20px; height: 30px; padding: 0; background: #fafafa; border: 1px solid #d1d1d1; border-bottom-color: #b4b4b4; border-radius: 4px; font-size: 13px; touch-action: manipulation; }
+.key:hover { background: white; border-color: #979797; }
+.key:active { background: #dce7df; border-color: var(--accent); }
+.key.wide { flex: 1.7; max-width: 94px; font-size: 11px; background: #e3e3e3; }
+.key.space { flex: 6; max-width: 390px; }
+.key[aria-pressed="true"] { background: #d8e6dd; color: #174c36; border-color: #89aa97; }
+.layout-label { font-size: 11px; color: #666; margin-right: auto; }
+@media(max-width: 620px) { body { padding-right: 6px; padding-left: 6px; } .layout-label { display: none; } .key-row { gap: 3px; } }
+</style></head>
+<body>
+<header id="keyboard-header"><h1>On-screen keyboard</h1><span class="layout-label" id="layout-label">English (US)</span><div class="actions"><button class="button" id="shuffle" aria-pressed="false">Shuffle letters</button><button class="button" id="reset">Reset layout</button><button class="button" id="placement" data-command="DETACH_OSK" title="Move the keyboard into a floating window">Detach</button><button class="button" data-command="TOGGLE_OSK">Close</button></div></header>
+<div id="keys" role="group" aria-label="On-screen keyboard"></div>
+<script>
+__COMMON_JAVASCRIPT__
+const defaultLayout = [
+    ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'BACKSPACE'],
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\'],
+    ['CAPS', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", 'ENTER'],
+    ['SHIFT', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 'SHIFT'],
+    ['SPACE']
+];
+const shiftedSymbols = { '`': '~', '1': '!', '2': '@', '3': '#', '4': '$', '5': '%', '6': '^', '7': '&', '8': '*', '9': '(', '0': ')', '-': '_', '=': '+', '[': '{', ']': '}', '\\': '|', ';': ':', "'": '"', ',': '<', '.': '>', '/': '?' };
+const specialLabels = { CAPS: 'Caps lock', SHIFT: 'Shift', ENTER: 'Enter', BACKSPACE: 'Backspace', SPACE: 'Space' };
+let installedLayout = defaultLayout.map(row => row.map(key => specialLabels[key] ? key : ({ value: key, shifted_value: shiftedSymbols[key] || key.toUpperCase() })));
+let currentLayout = installedLayout.map(row => row.slice());
+let layoutName = 'English (US)';
+let usesIme = false;
+let isShifted = false;
+let capsLocked = false;
+let isDetached = false;
+
+/** Updates placement controls without rebuilding keys or resetting their local state. */
+window.setKeyboardDetached = function(detached) {
+    isDetached = Boolean(detached);
+    document.body.classList.toggle('detached', isDetached);
+    const button = document.getElementById('placement');
+    button.textContent = isDetached ? 'Attach' : 'Detach';
+    button.dataset.command = isDetached ? 'ATTACH_OSK' : 'DETACH_OSK';
+    button.title = isDetached ? 'Attach the keyboard to the browser' : 'Move the keyboard into a floating window';
+    document.getElementById('keyboard-header').title = isDetached ? 'Drag to move the keyboard' : '';
+};
+document.getElementById('keyboard-header').addEventListener('pointerdown', event => {
+    if (!isDetached || event.button !== 0 || event.target.closest('button')) return;
+    event.preventDefault();
+    postIpc({ type: 'START_OSK_DRAG' });
+});
+
+function characterForKey(key) {
+    if (key === 'SPACE') return ' ';
+    if (typeof key === 'string') return key;
+    if (capsLocked) {
+        const capsValue = key.caps_value ?? (isLetterKey(key) ? key.shifted_value : key.value);
+        const shiftedCapsValue = key.shifted_caps_value ?? (isLetterKey(key) ? key.value : key.shifted_value);
+        return isShifted ? shiftedCapsValue : capsValue;
+    }
+    return isShifted ? key.shifted_value : key.value;
+}
+
+function isLetterKey(key) { return typeof key !== 'string' && /^\p{L}$/u.test(key.value); }
+
+/** Uses the selected installed layout for both characters and local Shift punctuation. */
+window.setKeyboardLayout = function(rows, name, ime) {
+    if (!Array.isArray(rows) || rows.length !== 4) return;
+    installedLayout = [
+        [...rows[0], 'BACKSPACE'], rows[1].slice(),
+        ['CAPS', ...rows[2], 'ENTER'], ['SHIFT', ...rows[3], 'SHIFT'], ['SPACE']
+    ];
+    layoutName = String(name);
+    usesIme = Boolean(ime);
+    resetLayout();
+};
+
+/** O(k) time and space for the fixed set of keyboard keys. */
+function renderKeyboard() {
+    const focusedPosition = document.hasFocus() && document.activeElement?.dataset.position;
+    const fragment = document.createDocumentFragment();
+    currentLayout.forEach((row, rowIndex) => {
+        const rowElement = document.createElement('div');
+        rowElement.className = 'key-row';
+        row.forEach((key, keyIndex) => {
+            const button = document.createElement('button');
+            button.className = 'key' + (specialLabels[key] ? ' wide' : '') + (key === 'SPACE' ? ' space' : '');
+            button.dataset.position = rowIndex + ':' + keyIndex;
+            button.textContent = specialLabels[key] || characterForKey(key);
+            button.setAttribute('aria-label', specialLabels[key] || characterForKey(key));
+            if (key === 'SHIFT' || key === 'CAPS') button.setAttribute('aria-pressed', String(key === 'SHIFT' ? isShifted : capsLocked));
+            // Retain the website's input selection when a pointer activates a key.
+            button.addEventListener('pointerdown', event => event.preventDefault());
+            button.addEventListener('click', () => activateKey(key));
+            rowElement.append(button);
+        });
+        fragment.append(rowElement);
+    });
+    document.getElementById('keys').replaceChildren(fragment);
+    if (focusedPosition) {
+        Array.from(document.querySelectorAll('.key')).find(button => button.dataset.position === focusedPosition)?.focus();
+    }
+}
+
+function activateKey(key) {
+    if (key === 'SHIFT') { isShifted = !isShifted; renderKeyboard(); return; }
+    if (key === 'CAPS') { capsLocked = !capsLocked; renderKeyboard(); return; }
+    postIpc({ type: 'KEY_INPUT', action: characterForKey(key) });
+    if (isShifted) { isShifted = false; renderKeyboard(); }
+}
+
+/** Samples without modulo bias so every letter ordering remains equally likely. */
+function randomIndex(upperExclusive) {
+    const random = new Uint32Array(1);
+    const uniformLimit = 0x100000000 - (0x100000000 % upperExclusive);
+    do { crypto.getRandomValues(random); } while (random[0] >= uniformLimit);
+    return random[0] % upperExclusive;
+}
+
+/** Fisher-Yates shuffle: O(k) time and space over the alphabet. */
+function shuffleLetters() {
+    const letters = installedLayout.flat().filter(isLetterKey);
+    for (let index = letters.length - 1; index > 0; index--) {
+        const target = randomIndex(index + 1);
+        [letters[index], letters[target]] = [letters[target], letters[index]];
+    }
+    let letterIndex = 0;
+    currentLayout = installedLayout.map(row => row.map(key => isLetterKey(key) ? letters[letterIndex++] : key));
+    document.getElementById('layout-label').textContent = layoutName + ' · Letters shuffled';
+    document.getElementById('shuffle').setAttribute('aria-pressed', 'true');
+    renderKeyboard();
+}
+document.getElementById('shuffle').addEventListener('click', shuffleLetters);
+function resetLayout() {
+    currentLayout = installedLayout.map(row => row.slice());
+    isShifted = false;
+    capsLocked = false;
+    document.getElementById('layout-label').textContent = layoutName + (usesIme ? ' · IME: use physical keyboard' : '');
+    document.getElementById('shuffle').setAttribute('aria-pressed', 'false');
+    renderKeyboard();
+}
+document.getElementById('reset').addEventListener('click', resetLayout);
+bindCommandButtons();
+renderKeyboard();
+notifyReady();
+</script></body></html>

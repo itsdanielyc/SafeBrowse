@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/itsdanielyc/SafeBrowse/security/advisories/new
+    about: Use this for security concerns, including suspected capture-protection bypasses. Do not disclose these in public issues.
+  - name: Troubleshooting and usage
+    url: https://github.com/itsdanielyc/SafeBrowse#troubleshooting
+    about: Check installation, runtime, capture and cleanup guidance before opening an issue.

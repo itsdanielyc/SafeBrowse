@@ -1,14 +1,18 @@
 //! Desktop Recovery Guard & Watchdog Subsystem
 //!
-//! Enforces the fail-safe recovery invariant: under NO circumstances should a crash,
-//! panic, or unexpected termination leave the user trapped on an unresponsive alternate desktop.
+//! Restores the normal desktop when a browser worker exits or supervisor code unwinds.
+//! OS termination of the supervisor or an unresponsive worker still needs manual recovery.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{
+    CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, WAIT_FAILED, WAIT_OBJECT_0,
+};
 use windows::Win32::System::StationsAndDesktops::{SwitchDesktop, HDESK};
-use windows::Win32::System::Threading::WaitForSingleObject;
+use windows::Win32::System::Threading::{GetCurrentProcess, WaitForSingleObject};
+
+use crate::config::WATCHDOG_POLL_INTERVAL;
 
 /// RAII Guard that unconditionally restores the default desktop upon drop.
 pub struct DesktopRecoveryGuard {
@@ -57,42 +61,65 @@ impl DesktopWatchdog {
     /// # Arguments
     /// - `worker_process_handle`: Win32 `HANDLE` to the worker process.
     /// - `default_desktop`: Win32 `HDESK` to switch back to on termination.
-    pub fn spawn(worker_process_handle: HANDLE, default_desktop: HDESK) -> Self {
+    pub fn spawn(worker_process_handle: HANDLE, default_desktop: HDESK) -> Result<Self, String> {
+        let mut owned_process_handle = HANDLE::default();
+        unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                worker_process_handle,
+                GetCurrentProcess(),
+                &mut owned_process_handle,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            )
+        }
+        .map_err(|error| format!("Could not initialize desktop watchdog: {error}"))?;
         let shutdown_signal = Arc::new(AtomicBool::new(false));
         let worker_exited = Arc::new(AtomicBool::new(false));
 
         let shutdown_clone = Arc::clone(&shutdown_signal);
         let worker_exited_clone = Arc::clone(&worker_exited);
 
-        let handle_val = worker_process_handle.0 as usize;
+        let handle_val = owned_process_handle.0 as usize;
         let desktop_val = default_desktop.0 as usize;
 
-        let join_handle = thread::spawn(move || {
-            let proc_handle = HANDLE(handle_val as _);
-            let def_desktop = HDESK(desktop_val as _);
+        let join_handle = thread::Builder::new()
+            .name("desktop-watchdog".into())
+            .spawn(move || {
+                let proc_handle = HANDLE(handle_val as _);
+                let def_desktop = HDESK(desktop_val as _);
 
-            while !shutdown_clone.load(Ordering::Relaxed) {
-                // Poll process liveness with a non-blocking timeout
-                let wait_result = unsafe { WaitForSingleObject(proc_handle, 200) };
-                if wait_result == WAIT_OBJECT_0 {
-                    // Worker process has terminated (cleanly or via crash)
-                    worker_exited_clone.store(true, Ordering::SeqCst);
-                    // Immediately restore the interactive default desktop
-                    unsafe {
-                        let _ = SwitchDesktop(def_desktop);
+                while !shutdown_clone.load(Ordering::Relaxed) {
+                    // Poll process liveness with a non-blocking timeout
+                    let wait_result = unsafe {
+                        WaitForSingleObject(proc_handle, WATCHDOG_POLL_INTERVAL.as_millis() as u32)
+                    };
+                    if wait_result == WAIT_OBJECT_0 || wait_result == WAIT_FAILED {
+                        // Worker process has terminated (cleanly or via crash)
+                        worker_exited_clone.store(true, Ordering::SeqCst);
+                        // Immediately restore the interactive default desktop
+                        unsafe {
+                            let _ = SwitchDesktop(def_desktop);
+                        }
+                        break;
                     }
-                    break;
                 }
-            }
-        });
+            })
+            .map_err(|error| {
+                unsafe {
+                    let _ = CloseHandle(owned_process_handle);
+                }
+                format!("Could not start desktop watchdog: {error}")
+            })?;
 
-        Self {
-            worker_process_handle,
+        Ok(Self {
+            worker_process_handle: owned_process_handle,
             _default_desktop: default_desktop,
             shutdown_signal,
             worker_exited,
             join_handle: Some(join_handle),
-        }
+        })
     }
 
     /// Checks if the monitored worker process has terminated.

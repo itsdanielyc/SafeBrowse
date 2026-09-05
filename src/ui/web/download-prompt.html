@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Download request — SafeBrowse</title>
+<style>
+__COMMON_CSS__
+html, body { height: 100%; overflow: hidden; }
+body { background: #fff; border: 1px solid #bdbdbd; display: flex; flex-direction: column; padding: 22px; }
+.eyebrow { margin-bottom: 10px; flex-shrink: 0; }
+h1 { font-size: 19px; margin-bottom: 12px; flex-shrink: 0; }
+.details { flex: 1; min-height: 0; overflow: auto; font-size: 12px; }
+.details p { margin: 8px 0; overflow-wrap: anywhere; }
+#filename { font-size: 14px; font-weight: 600; unicode-bidi: plaintext; }
+#source, #origin { unicode-bidi: plaintext; }
+.muted { color: #626262; }
+#error { color: #b42318; }
+.actions { display: flex; flex-shrink: 0; gap: 8px; padding-top: 16px; }
+.actions .button { flex: 1; }
+</style></head><body>
+<p class="eyebrow">SafeBrowse · Download request</p><h1>Download this file?</h1>
+<div class="details"><p id="filename"></p><p id="origin"></p><p id="source"></p><p id="size" class="muted"></p>
+<p class="muted">Only download files you trust. Files are saved in Downloads / SafeBrowse, remain after the session ends, and are never opened automatically.</p>
+<p id="error" role="status"></p></div>
+<div class="actions"><button class="button" id="cancel" disabled>Cancel</button><button class="button primary" id="download" disabled>Download</button></div>
+<script>
+__COMMON_JAVASCRIPT__
+let requestId = null;
+window.showRequest = function(request) {
+    const changed = requestId !== request.id;
+    requestId = request.id;
+    document.getElementById('filename').textContent = request.file_name;
+    document.getElementById('origin').textContent = `Page: ${request.origin}`;
+    document.getElementById('source').textContent = `File source: ${request.url}`;
+    document.getElementById('size').textContent = request.total_bytes == null ? 'Size unknown' : `Size: ${Number(request.total_bytes).toLocaleString()} bytes`;
+    document.getElementById('error').textContent = '';
+    document.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    if (changed) document.getElementById('cancel').focus();
+};
+window.showRequestError = message => { document.getElementById('error').textContent = String(message); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); };
+function resolveDownload(allow) {
+    if (requestId === null) return;
+    document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    postIpc({type:'RESOLVE_DOWNLOAD',id:requestId,allow});
+}
+document.getElementById('cancel').addEventListener('click', () => resolveDownload(false));
+document.getElementById('download').addEventListener('click', () => resolveDownload(true));
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); resolveDownload(false); } });
+notifyReady();
+</script></body></html>

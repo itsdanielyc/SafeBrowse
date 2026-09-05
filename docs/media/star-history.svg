@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="336" viewBox="0 0 960 336" role="img" aria-labelledby="title description">
+  <title id="title">itsdanielyc/SafeBrowse star history</title>
+  <desc id="description">Tracking will begin with the first live GitHub observation. No star counts have been recorded yet.</desc>
+  <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#51dfc4" stop-opacity=".23"/><stop offset="1" stop-color="#51dfc4" stop-opacity="0"/></linearGradient></defs>
+  <rect x="1" y="1" width="958" height="334" rx="22" fill="#101b21" stroke="#294048"/>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <path d="m39 31 3.2 6.5 7.2 1-5.2 5.1 1.2 7.1-6.4-3.4-6.4 3.4 1.2-7.1-5.2-5.1 7.2-1z" fill="#51dfc4"/>
+    <text x="61" y="46" fill="#adcbc9" font-size="12" font-weight="700" letter-spacing="1.8">COMMUNITY SUPPORT</text>
+    
+    <text x="40" y="111" fill="#eefaf7" font-size="32" font-weight="700">Just launched</text>
+    <text x="40" y="152" fill="#a7b9bc" font-size="17">The first live star count will appear here shortly.</text>
+    <text x="40" y="185" fill="#a7b9bc" font-size="15">Star the project to follow its progress and help others discover it.</text>
+    <path d="M40 249H920" stroke="#294048"/>
+    <text x="40" y="291" fill="#91a9ad" font-size="13">Daily UTC observations · itsdanielyc/SafeBrowse</text>
+  </g>
+</svg>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Website request — SafeBrowse</title>
+<style>
+__COMMON_CSS__
+html, body { height: 100%; overflow: hidden; }
+body { background: #fff; border: 1px solid #bdbdbd; display: flex; flex-direction: column; padding: 22px; }
+.eyebrow { margin-bottom: 10px; flex-shrink: 0; }
+h1 { font-size: 19px; margin-bottom: 12px; flex-shrink: 0; }
+.request-details { flex: 1; min-height: 0; overflow: auto; }
+#origin { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; margin-bottom: 8px; user-select: text; }
+#description { font-size: 13px; color: #626262; line-height: 1.5; margin: 0; }
+#target { font-size: 12px; color: #626262; overflow-wrap: anywhere; margin-top: 10px; }
+#error { color: #b42318; font-size: 12px; margin-top: 8px; }
+.actions { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 8px; padding-top: 16px; }
+.actions .button { flex: 1; white-space: nowrap; }
+#later { border: 0; background: none; color: #626262; font-size: 12px; text-decoration: underline; margin-top: 12px; align-self: center; flex-shrink: 0; }
+</style></head><body>
+<p class="eyebrow">SafeBrowse · Website request</p><h1 id="heading">Allow access?</h1>
+<div class="request-details"><div id="origin"></div><p id="description"></p><div id="target"></div><p id="error" role="status"></p></div>
+<div class="actions"><button class="button" id="block">Block</button><button class="button" id="once">Allow once</button><button class="button primary" id="always">Always allow</button></div>
+<button id="later">Not now</button>
+<script>
+__COMMON_JAVASCRIPT__
+let requestId = null;
+const requestDescriptions = {
+    popups: ['Open a pop-up?', 'This website wants to open another SafeBrowse tab.'],
+    camera: ['Allow camera access?', 'This website wants to use your camera.'],
+    microphone: ['Allow microphone access?', 'This website wants to use your microphone.'],
+    location: ['Share your location?', 'This website wants to know your location.'],
+    notifications: ['Allow notifications?', 'This website wants to show notifications.'],
+    clipboard_read: ['Allow clipboard access?', 'This website wants to read text or other content from your clipboard.'],
+    other_sensors: ['Allow motion sensors?', 'This website wants to read motion or orientation sensors.'],
+    local_fonts: ['Allow access to local fonts?', 'This website wants to see fonts installed on your computer.'],
+    midi_system_exclusive: ['Allow MIDI device access?', 'This website wants to exchange system messages with connected MIDI devices.'],
+    window_management: ['Allow window management?', 'This website wants information about your screens and to arrange windows.'],
+    autoplay: ['Allow automatic playback?', 'This website wants to play media without waiting for you to start it.']
+};
+window.showRequest = function(request) {
+    const changed = requestId !== request.id;
+    requestId = request.id;
+    const description = requestDescriptions[request.permission] || ['Allow website access?', 'This website requested an additional permission.'];
+    document.getElementById('heading').textContent = description[0];
+    document.getElementById('origin').textContent = request.origin;
+    document.getElementById('description').textContent = description[1];
+    document.getElementById('target').textContent = request.target_url ? `Destination: ${request.target_url}` : '';
+    document.getElementById('error').textContent = '';
+    document.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    if (changed) document.getElementById('later').focus();
+};
+window.showRequestError = message => { document.getElementById('error').textContent = String(message); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); };
+function resolveRequest(decision, remember) {
+    if (requestId === null) return;
+    document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    postIpc({ type: 'RESOLVE_SITE_REQUEST', id: requestId, decision, remember });
+}
+document.getElementById('block').addEventListener('click', () => resolveRequest('block', true));
+document.getElementById('once').addEventListener('click', () => resolveRequest('allow', false));
+document.getElementById('always').addEventListener('click', () => resolveRequest('allow', true));
+document.getElementById('later').addEventListener('click', () => resolveRequest('block', false));
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); resolveRequest('block', false); } });
+notifyReady();
+</script></body></html>

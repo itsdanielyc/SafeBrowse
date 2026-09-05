@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Screen recording warning — SafeBrowse</title>
+<style>
+__COMMON_CSS__
+html, body { min-height: 100%; background: #f4f4f4; }
+body { min-height: 100vh; display: grid; place-items: center; padding: 28px; }
+.warning { width: min(560px, 100%); background: #fff; border: 1px solid #d69a94; border-top: 6px solid #b42318; border-radius: 7px; overflow: hidden; box-shadow: 0 8px 32px #00000012; }
+.content { padding: 30px 32px 26px; }
+.warning-icon { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; color: #b42318; background: #ffefed; margin-bottom: 18px; }
+h1 { color: #9f251c; font-size: 25px; margin-bottom: 16px; }
+p { font-size: 14px; line-height: 1.6; }
+.production-warning { padding: 14px 16px; color: #8f221b; background: #fff0ef; border: 1px solid #edc2bd; border-radius: 4px; margin: 20px 0 0; }
+.production-warning strong { display: block; margin-bottom: 4px; }
+footer { padding: 18px 32px; display: flex; justify-content: flex-end; background: #fafafa; border-top: 1px solid #e5e5e5; }
+.confirm { min-width: 96px; color: #fff; background: #b42318; border-color: #b42318; }
+.confirm:hover { background: #8f1c14; }
+</style></head>
+<body>
+<main class="warning" role="alertdialog" aria-modal="true" aria-labelledby="warning-title" aria-describedby="warning-description production-warning">
+    <div class="content">
+        <div class="warning-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 10 17H2Z"/><path d="M12 8v5m0 3v1"/></svg></div>
+        <p class="eyebrow">SafeBrowse · Testing mode</p>
+        <h1 id="warning-title">Screen recording is allowed</h1>
+        <p id="warning-description">Screenshots and screen recording are enabled for this session. Anyone with capture access could record passwords, payment details, and other sensitive information displayed here.</p>
+        <div class="production-warning" id="production-warning"><strong>This carries a security risk.</strong>If this is a production app, stop using it.<br>Continue only with test accounts and non-sensitive information.</div>
+    </div>
+    <footer><button class="button confirm" id="acknowledge" type="button" autofocus>OK</button></footer>
+</main>
+<script>
+__COMMON_JAVASCRIPT__
+document.getElementById('acknowledge').addEventListener('click', event => {
+    event.currentTarget.disabled = true;
+    postIpc({ type: 'ACKNOWLEDGE_CAPTURE_RISK' });
+});
+document.getElementById('acknowledge').focus();
+</script>
+</body></html>

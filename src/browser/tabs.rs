@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::navigation::uses_https;
+
 /// Type classification for a tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TabKind {
@@ -27,7 +29,7 @@ impl TabItem {
     /// Constructs a new tab with a given ID and initial URL.
     pub fn new(id: usize, url: impl Into<String>) -> Self {
         let url_str = url.into();
-        let is_secure = url_str.starts_with("https://");
+        let is_secure = uses_https(&url_str);
         Self {
             id,
             title: "New Tab".to_string(),
@@ -51,7 +53,7 @@ impl TabItem {
             title: title_str,
             url: url_scheme.to_string(),
             is_loading: false,
-            is_secure: true,
+            is_secure: false,
             kind,
         }
     }
@@ -89,7 +91,12 @@ impl TabManager {
 
     /// Returns a reference to the active tab.
     pub fn active_tab(&self) -> Option<&TabItem> {
-        self.tabs.iter().find(|t| t.id == self.active_tab_id)
+        self.tab(self.active_tab_id)
+    }
+
+    /// Returns a tab by its stable identifier.
+    pub fn tab(&self, id: usize) -> Option<&TabItem> {
+        self.tabs.iter().find(|tab| tab.id == id)
     }
 
     /// Creates and activates a new web tab with the target URL.
@@ -142,14 +149,9 @@ impl TabManager {
     /// - Time: O(N)
     /// - Space: O(1)
     pub fn close_tab(&mut self, id: usize) -> bool {
-        // Why: Preserve at least one tab open at all times.
+        // The caller owns last-tab navigation; a rejected close must not silently
+        // change metadata while the existing webview still shows its old page.
         if self.tabs.len() <= 1 {
-            if let Some(first) = self.tabs.first_mut() {
-                first.url = "https://duckduckgo.com".to_string();
-                first.title = "New Tab".to_string();
-                first.is_secure = true;
-                first.kind = TabKind::Web;
-            }
             return false;
         }
 
@@ -174,11 +176,44 @@ impl TabManager {
     /// Updates the URL, title, and security state for a tab, setting its kind to Web.
     pub fn update_tab(&mut self, id: usize, url: String, title: String) {
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
-            tab.is_secure = url.starts_with("https://");
+            tab.is_secure = uses_https(&url);
             tab.url = url;
             tab.title = title;
             tab.is_loading = false;
             tab.kind = TabKind::Web;
         }
+    }
+
+    /// Updates the loading indicator for one webview without changing its title.
+    pub fn set_loading(&mut self, id: usize, is_loading: bool) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return false;
+        };
+        tab.is_loading = is_loading && tab.kind == TabKind::Web;
+        true
+    }
+
+    /// Updates the current address and transport indicator after navigation.
+    pub fn update_url(&mut self, id: usize, url: &str) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return false;
+        };
+        if tab.kind != TabKind::Web {
+            return false;
+        }
+        tab.url = url.to_owned();
+        tab.is_secure = uses_https(url);
+        true
+    }
+
+    /// Updates a tab title independently of loading and address state.
+    pub fn update_title(&mut self, id: usize, title: &str) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return false;
+        };
+        if !title.trim().is_empty() {
+            tab.title = title.trim().to_owned();
+        }
+        true
     }
 }

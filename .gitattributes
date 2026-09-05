@@ -1,0 +1,7 @@
+# Retain exact upstream license bytes used by the notice generator's digest checks.
+/docs/third-party/*.txt -text
+/THIRD_PARTY_NOTICES.txt -text
+
+# Product media is copied verbatim from the owner-supplied release assets.
+/docs/media/*.png binary
+/docs/media/*.mp4 binary

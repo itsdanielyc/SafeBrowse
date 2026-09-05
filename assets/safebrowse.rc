@@ -1,0 +1,29 @@
+// Keep the resource ordinal in sync with APPLICATION_ICON_RESOURCE in ui/branding.rs.
+1 ICON "branding/safebrowse.ico"
+
+1 VERSIONINFO
+ FILEVERSION SAFEBROWSE_VERSION_NUMBERS
+ PRODUCTVERSION SAFEBROWSE_VERSION_NUMBERS
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "SafeBrowse Contributors"
+            VALUE "FileDescription", "SafeBrowse"
+            VALUE "FileVersion", SAFEBROWSE_VERSION_STRING
+            VALUE "LegalCopyright", "Copyright (c) 2026 SafeBrowse Contributors"
+            VALUE "ProductName", "SafeBrowse"
+            VALUE "ProductVersion", SAFEBROWSE_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

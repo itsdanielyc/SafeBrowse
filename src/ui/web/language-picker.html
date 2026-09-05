@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Input language — SafeBrowse</title>
+<style>
+__COMMON_CSS__
+html, body { height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; border: 1px solid #bdbdbd; background: #fff; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; }
+h1 { margin: 0; font-size: 16px; }
+.description { padding: 0 16px; margin-bottom: 10px; font-size: 12px; color: #626262; }
+#languages { overflow-y: auto; flex: 1; padding: 4px 8px 10px; }
+.language { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 10px; border: 0; border-radius: 4px; text-align: left; background: transparent; }
+.language:hover { background: #f0f0f0; }
+.language[aria-checked="true"] { background: #e5eee9; color: #174c36; }
+.code { width: 36px; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.name { flex: 1; font-size: 13px; }
+.check { width: 16px; }
+#status { margin: 0; padding: 6px 16px 12px; font-size: 12px; color: #b42318; }
+#status:empty { display: none; }
+</style></head><body>
+<header><h1>Input language</h1><button class="icon-button" data-command="CLOSE_LANGUAGE_PICKER" aria-label="Close language picker">×</button></header>
+<p class="description">Choose an installed keyboard layout.</p>
+<div id="languages" role="radiogroup" aria-label="Input language"></div><p id="status" role="status"></p>
+<script>
+__COMMON_JAVASCRIPT__
+let lastState = '';
+window.updateLanguages = function(state) {
+    const serialized = JSON.stringify(state);
+    if (serialized === lastState) return;
+    lastState = serialized;
+    const fragment = document.createDocumentFragment();
+    (state.layouts || []).forEach(layout => {
+        const button = document.createElement('button');
+        button.className = 'language';
+        button.type = 'button';
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', String(layout.id === state.active_id));
+        const code = document.createElement('span'); code.className = 'code'; code.textContent = layout.code;
+        const name = document.createElement('span'); name.className = 'name'; name.textContent = layout.label;
+        const check = document.createElement('span'); check.className = 'check'; check.textContent = layout.id === state.active_id ? '✓' : '';
+        button.append(code, name, check);
+        button.addEventListener('click', () => postIpc({ type: 'SELECT_INPUT_LANGUAGE', id: layout.id }));
+        fragment.append(button);
+    });
+    document.getElementById('languages').replaceChildren(fragment);
+};
+window.showLanguageError = message => { document.getElementById('status').textContent = String(message || ''); };
+window.focusSelectedLanguage = () => {
+    if (document.hasFocus()) document.querySelector('[aria-checked="true"]')?.focus();
+};
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); postIpc({ type: 'CLOSE_LANGUAGE_PICKER' }); }
+});
+bindCommandButtons();
+notifyReady();
+</script></body></html>

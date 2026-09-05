@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a reproducible application or compatibility problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve SafeBrowse. Use dummy data and remove personal information from logs and recordings.
+        Suspected security issues, including capture bypasses, should be [reported privately](https://github.com/itsdanielyc/SafeBrowse/security/advisories/new).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before reporting
+      options:
+        - label: I searched existing issues and checked the README troubleshooting section.
+          required: true
+        - label: This report contains no credentials, tokens, personal browsing data or private security details.
+          required: true
+  - type: input
+    id: safebrowse_version
+    attributes:
+      label: SafeBrowse version or commit
+      placeholder: "For example: 0.1.0, installed from GitHub Releases"
+    validations:
+      required: true
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version and build
+      description: Find this in Windows Settings → System → About.
+    validations:
+      required: true
+  - type: input
+    id: runtime_version
+    attributes:
+      label: Microsoft Edge WebView2 Runtime version
+      description: Include the runtime version if known; this is separate from the Edge browser version.
+  - type: input
+    id: launch_options
+    attributes:
+      label: Launch options
+      placeholder: "Normal Start menu launch, or options such as --windowed"
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal example using disposable test data.
+      placeholder: |
+        1. Open SafeBrowse...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected and actual behavior
+      description: Include the exact error text, with personal paths redacted.
+    validations:
+      required: true
+  - type: textarea
+    id: display_environment
+    attributes:
+      label: Display and recording setup, if relevant
+      description: Include monitor count, resolution/scaling, main display, recorder/version and capture source/mode. Report suspected protection bypasses privately instead.
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Additional context or sanitised attachments
+      description: Never attach real account pages, passwords, payment details or sensitive recordings.

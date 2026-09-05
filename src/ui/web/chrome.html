@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeBrowse</title>
+<style>
+__COMMON_CSS__
+html, body { width: 100%; height: 110px; overflow: hidden; user-select: none; }
+body { background: #ededed; }
+#titlebar { height: 32px; display: flex; align-items: center; padding-left: 12px; gap: 10px; }
+.brand { display: flex; align-items: center; flex-shrink: 0; }
+.brand img { display: block; width: auto; height: 24px; object-fit: contain; pointer-events: none; }
+.session-label { padding: 1px 7px; color: #515151; font-size: 11px; border: 1px solid #d8d8d8; border-radius: 3px; }
+.session-label.recording { color: #a4261c; background: #fff0ef; border-color: #e5aea8; font-weight: 600; }
+#status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 6px; min-width: 0; min-height: 0; }
+.window-controls { margin-left: auto; align-self: stretch; display: flex; }
+.window-controls button { width: 45px; height: 32px; border-radius: 0; }
+.window-controls .close:hover { background: #c42b1c; color: white; }
+#tabstrip { display: flex; align-items: end; height: 36px; padding: 0 8px; gap: 4px; }
+#tabs-container { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; gap: 3px; height: 36px; align-items: end; }
+#tabs-container::-webkit-scrollbar { display: none; }
+.tab { display: flex; align-items: center; gap: 1px; min-width: 124px; width: 208px; height: 33px; padding-right: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; }
+.tab:hover { background: #e3e3e3; }
+.tab.active { background: #fafafa; border-color: #dedede; }
+.tab-select { height: 100%; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 11px; flex: 1; min-width: 0; background: transparent; border: 0; text-align: left; font-size: 12px; border-radius: 5px 0 0 0; }
+.tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-close { width: 24px; height: 24px; flex-shrink: 0; }
+.tab-close:hover { background: #d8d8d8; }
+.tab-icon { width: 14px; height: 14px; color: #666; }
+.tab.loading .tab-icon { color: var(--accent); animation: loading 1.1s linear infinite; }
+#new-tab { margin-bottom: 2px; flex-shrink: 0; }
+#navbar { height: 42px; background: #fafafa; border-bottom: 1px solid #d5d5d5; display: flex; align-items: center; padding: 0 8px; gap: 3px; }
+#navbar > button { flex-shrink: 0; }
+.omnibox-wrap { min-width: 80px; height: 30px; flex: 1; display: flex; align-items: center; gap: 8px; margin: 0 5px; padding: 0 10px; background: white; border: 1px solid #d3d3d3; border-radius: 4px; }
+.omnibox-wrap:focus-within { border-color: var(--focus); box-shadow: inset 0 -1px var(--focus); }
+#site-indicator { font-size: 10px; color: #686868; cursor: default; }
+#site-indicator.warning { color: #a4261c; }
+#omnibox { width: 100%; min-width: 0; height: 27px; padding: 0; border: 0; background: transparent; outline: none; user-select: text; font-size: 12px; }
+.toolbar-divider { width: 1px; height: 18px; margin: 0 4px; background: #ddd; }
+@keyframes loading { to { transform: rotate(360deg); } }
+@media (max-width: 650px) { .session-label { max-width: 134px; white-space: nowrap; overflow: hidden; } .tab { min-width: 105px; width: 150px; } #status { display: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+    <symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z"/></symbol>
+    <symbol id="star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z"/></symbol>
+    <symbol id="settings" viewBox="0 0 24 24"><path d="m9.5 3-.6 2.6-2 1.2-2.6-.8L2 10l2 1.8v2.4L2 16l2.3 4 2.6-.8 2 1.2.6 2.6h5l.6-2.6 2-1.2 2.6.8 2.3-4-2-1.8v-2.4l2-1.8-2.3-4-2.6.8-2-1.2L14.5 3Z" transform="translate(0 -1) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></symbol>
+    <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 5v6h-6M19.5 10a8 8 0 1 0 .1 4"/></symbol>
+    <symbol id="keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m3 0h1m3 0h1m3 0h.1M6 12h1m3 0h1m3 0h1m3 0h.1M7 16h10"/></symbol>
+    <symbol id="bookmarks" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></symbol>
+    <symbol id="printer" viewBox="0 0 24 24"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7Z"/><path d="M16 11h1"/></symbol>
+</defs></svg>
+<div id="titlebar">
+    <div class="brand"><img src="__BRAND_WORDMARK__" alt="SafeBrowse" draggable="false"></div>
+    <span id="session-label" class="session-label" hidden></span>
+    <span id="runtime-update" class="session-label" hidden title="Close SafeBrowse and reopen when you have finished to use the installed browser update.">Restart to update</span>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div class="window-controls">
+        <button class="icon-button" data-command="MINIMIZE" title="Minimize" aria-label="Minimize"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.5h10" stroke="currentColor"/></svg></button>
+        <button class="icon-button" id="max-btn" data-command="TOGGLE_MAXIMIZE" title="Maximize" aria-label="Maximize"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden="true"><path id="max-path" d="M1.5 1.5h9v9h-9z"/></svg></button>
+        <button class="icon-button close" data-command="CLOSE_WINDOW" title="End session" aria-label="End session"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><use href="#close"/></svg></button>
+    </div>
+</div>
+<div id="tabstrip">
+    <div id="tabs-container" role="tablist" aria-label="Open tabs"></div>
+    <button class="icon-button" id="new-tab" data-command="NEW_TAB" title="New tab (Ctrl+T)" aria-label="New tab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+</div>
+<nav id="navbar" aria-label="Browser controls">
+    <button class="icon-button" id="back-btn" data-command="GO_BACK" title="Back (Alt+Left)" aria-label="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m11 5-7 7 7 7M4 12h16"/></svg></button>
+    <button class="icon-button" id="forward-btn" data-command="GO_FORWARD" title="Forward (Alt+Right)" aria-label="Forward"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m13 5 7 7-7 7M20 12H4"/></svg></button>
+    <button class="icon-button" id="reload-btn" data-command="RELOAD" title="Reload (Ctrl+R)" aria-label="Reload"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><use href="#refresh"/></svg></button>
+    <div class="omnibox-wrap">
+        <span id="site-indicator" aria-label="Connection information"></span>
+        <input id="omnibox" type="text" aria-label="Search or enter a web address" placeholder="Search or enter a web address" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <button class="icon-button" id="bookmark-btn" data-command="ADD_BOOKMARK" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><use href="#star"/></svg></button>
+    <button class="icon-button" id="osk-btn" data-command="TOGGLE_OSK" title="On-screen keyboard" aria-label="On-screen keyboard" aria-pressed="false"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><use href="#keyboard"/></svg></button>
+    <button class="icon-button" id="print-btn" data-command="PRINT" title="Print (Ctrl+P)" aria-label="Print" aria-keyshortcuts="Control+p" disabled><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><use href="#printer"/></svg></button>
+    <span class="toolbar-divider" aria-hidden="true"></span>
+    <button class="icon-button" data-command="OPEN_BOOKMARKS" title="Bookmarks" aria-label="Bookmarks"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><use href="#bookmarks"/></svg></button>
+    <button class="icon-button" data-command="OPEN_SETTINGS" title="Settings and session information" aria-label="Settings"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><use href="#settings"/></svg></button>
+</nav>
+<script>
+__COMMON_JAVASCRIPT__
+const presentation = __PRESENTATION_JSON__;
+let currentTabs = presentation.tabs;
+let activeTabId = presentation.active_id;
+let isEditingAddress = false;
+let statusTimeout;
+const omnibox = document.getElementById('omnibox');
+const tabsContainer = document.getElementById('tabs-container');
+const sessionLabel = document.getElementById('session-label');
+const printButton = document.getElementById('print-btn');
+sessionLabel.textContent = presentation.session.capture_allowed ? 'Recording allowed' : 'Desktop mode';
+sessionLabel.hidden = presentation.session.is_isolated && !presentation.session.capture_allowed;
+sessionLabel.classList.toggle('recording', presentation.session.capture_allowed);
+sessionLabel.title = presentation.session.capture_allowed ? 'Security risk: screenshots and screen recording are allowed in this session.' : 'Session details are available in Settings.';
+
+/** Creates only trusted local SVG references; website data never reaches innerHTML. */
+function localIcon(name, className) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', className);
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.6');
+    svg.setAttribute('aria-hidden', 'true');
+    const reference = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    reference.setAttribute('href', '#' + name);
+    svg.append(reference);
+    return svg;
+}
+
+/** O(n) time and space; tab count is bounded by the native tab manager. */
+function renderTabs(forceAddressUpdate = false) {
+    const focusedTab = document.hasFocus() && document.activeElement?.dataset.tabId;
+    const fragment = document.createDocumentFragment();
+    currentTabs.forEach(tab => {
+        const isActive = tab.id === activeTabId;
+        const item = document.createElement('div');
+        item.className = 'tab' + (isActive ? ' active' : '') + (tab.is_loading ? ' loading' : '');
+        item.setAttribute('role', 'presentation');
+        const select = document.createElement('button');
+        select.className = 'tab-select';
+        select.dataset.tabId = String(tab.id);
+        select.setAttribute('role', 'tab');
+        select.setAttribute('aria-selected', String(isActive));
+        select.tabIndex = isActive ? 0 : -1;
+        const title = String(tab.title || 'New tab');
+        select.title = title;
+        const icon = tab.is_loading ? 'refresh' : tab.kind === 'Bookmarks' ? 'bookmarks' : tab.kind === 'Settings' ? 'settings' : 'globe';
+        select.append(localIcon(icon, 'tab-icon'));
+        const label = document.createElement('span');
+        label.className = 'tab-title';
+        label.textContent = title;
+        select.append(label);
+        select.addEventListener('click', () => postIpc({ type: 'SWITCH_TAB', id: tab.id }));
+        const close = document.createElement('button');
+        close.className = 'icon-button tab-close';
+        close.title = 'Close ' + title;
+        close.setAttribute('aria-label', 'Close ' + title);
+        close.append(localIcon('close', 'tab-icon'));
+        close.addEventListener('click', () => postIpc({ type: 'CLOSE_TAB', id: tab.id }));
+        item.addEventListener('auxclick', event => {
+            if (event.button === 1) { event.preventDefault(); postIpc({ type: 'CLOSE_TAB', id: tab.id }); }
+        });
+        item.append(select, close);
+        fragment.append(item);
+    });
+    tabsContainer.replaceChildren(fragment);
+    const active = currentTabs.find(tab => tab.id === activeTabId);
+    printButton.disabled = !active || active.kind !== 'Web';
+    if (active) {
+        if (forceAddressUpdate || !isEditingAddress) omnibox.value = active.url;
+        const indicator = document.getElementById('site-indicator');
+        const isInternal = active.kind !== 'Web';
+        indicator.textContent = isInternal ? 'App' : active.is_secure ? 'HTTPS' : 'HTTP';
+        indicator.classList.toggle('warning', !isInternal && !active.is_secure);
+        indicator.title = isInternal ? 'SafeBrowse page' : active.is_secure ? 'HTTPS connection. Always check the website address.' : 'This connection is not encrypted.';
+        document.getElementById('bookmark-btn').disabled = isInternal;
+    }
+    if (focusedTab) {
+        const button = Array.from(tabsContainer.querySelectorAll('.tab-select')).find(item => item.dataset.tabId === focusedTab);
+        if (button) button.focus();
+    }
+}
+
+window.updateTabs = function(tabs, activeId) {
+    const switched = activeTabId !== activeId;
+    currentTabs = Array.isArray(tabs) ? tabs : [];
+    activeTabId = activeId;
+    renderTabs(switched);
+    if (switched) tabsContainer.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+};
+window.setOskActive = active => document.getElementById('osk-btn').setAttribute('aria-pressed', String(Boolean(active)));
+window.setRuntimeUpdateAvailable = available => { document.getElementById('runtime-update').hidden = !available; };
+window.setMaximizedState = function(maximized) {
+    const button = document.getElementById('max-btn');
+    button.title = maximized ? 'Restore down' : 'Maximize';
+    button.setAttribute('aria-label', button.title);
+    document.getElementById('max-path').setAttribute('d', maximized ? 'M3.5 1.5h7v7h-2M1.5 3.5h7v7h-7z' : 'M1.5 1.5h9v9h-9z');
+};
+window.focusOmnibox = function() { omnibox.focus(); omnibox.select(); };
+window.showStatus = function(message, isError = false) {
+    clearTimeout(statusTimeout);
+    const status = document.getElementById('status');
+    status.textContent = String(message);
+    status.title = String(message);
+    status.dataset.error = String(Boolean(isError));
+    statusTimeout = setTimeout(() => { status.textContent = ''; status.title = ''; }, 8000);
+};
+window.updateNavigationState = function(canGoBack, canGoForward) {
+    document.getElementById('back-btn').disabled = !canGoBack;
+    document.getElementById('forward-btn').disabled = !canGoForward;
+};
+window.setNavigationState = window.updateNavigationState;
+
+/** Binds the request to the displayed web tab so delayed IPC cannot print a newly selected tab. */
+function requestPrint() {
+    const active = currentTabs.find(tab => tab.id === activeTabId);
+    if (active?.kind === 'Web') postIpc({ type: 'PRINT', id: active.id });
+}
+
+/** The native layer owns address/search normalization and protocol validation. */
+function navigateFromOmnibox() {
+    const value = omnibox.value.trim();
+    if (value) {
+        isEditingAddress = false;
+        postIpc({ type: 'NAVIGATE', url: value });
+    }
+}
+
+window.injectOmniboxKey = function(value) {
+    if (value === 'ENTER') { navigateFromOmnibox(); return; }
+    let start = omnibox.selectionStart ?? omnibox.value.length;
+    const end = omnibox.selectionEnd ?? start;
+    if (value === 'BACKSPACE') {
+        if (start === end && start > 0) {
+            start -= 1;
+            const previous = omnibox.value.charCodeAt(start);
+            if (previous >= 0xdc00 && previous <= 0xdfff && start > 0) start -= 1;
+        }
+        omnibox.setRangeText('', start, end, 'end');
+    } else {
+        omnibox.setRangeText(String(value), start, end, 'end');
+    }
+    omnibox.dispatchEvent(new Event('input', { bubbles: true }));
+};
+omnibox.addEventListener('focus', () => {
+    isEditingAddress = true;
+    postIpc({ type: 'SET_INPUT_TARGET', target: 'OMNIBOX' });
+});
+omnibox.addEventListener('input', () => { isEditingAddress = true; });
+omnibox.addEventListener('blur', () => { isEditingAddress = false; });
+omnibox.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); navigateFromOmnibox(); }
+    if (event.key === 'Escape') {
+        omnibox.value = currentTabs.find(tab => tab.id === activeTabId)?.url || '';
+        omnibox.select();
+    }
+});
+document.getElementById('titlebar').addEventListener('mousedown', event => {
+    if (event.button === 0 && !event.target.closest('button')) postIpc({ type: 'START_DRAG' });
+});
+document.getElementById('titlebar').addEventListener('dblclick', event => {
+    if (!event.target.closest('button')) postIpc({ type: 'TOGGLE_MAXIMIZE' });
+});
+tabsContainer.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = currentTabs.findIndex(tab => tab.id === activeTabId);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? currentTabs.length - 1 : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + currentTabs.length) % currentTabs.length;
+    if (currentTabs[nextIndex]) postIpc({ type: 'SWITCH_TAB', id: currentTabs[nextIndex].id });
+});
+window.addEventListener('keydown', event => {
+    if (event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        if (!event.repeat) requestPrint();
+        return;
+    }
+    if (event.ctrlKey && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'l') { event.preventDefault(); window.focusOmnibox(); return; }
+        const command = { t: 'NEW_TAB', r: 'RELOAD', d: 'ADD_BOOKMARK' }[key];
+        if (command) { event.preventDefault(); postIpc({ type: command }); }
+        if (key === 'w') { event.preventDefault(); postIpc({ type: 'CLOSE_TAB', id: activeTabId }); }
+        if (key === 'tab' && currentTabs.length) {
+            event.preventDefault();
+            const index = currentTabs.findIndex(tab => tab.id === activeTabId);
+            const next = (index + (event.shiftKey ? -1 : 1) + currentTabs.length) % currentTabs.length;
+            postIpc({ type: 'SWITCH_TAB', id: currentTabs[next].id });
+        }
+    }
+    if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault(); postIpc({ type: event.key === 'ArrowLeft' ? 'GO_BACK' : 'GO_FORWARD' });
+    }
+    if (event.key === 'F5') { event.preventDefault(); postIpc({ type: 'RELOAD' }); }
+});
+// Print needs the intended tab ID; one handler per button prevents a second generic request.
+document.querySelectorAll('button[data-command]').forEach(button => {
+    button.addEventListener('click', () => {
+        if (button.dataset.command === 'PRINT') requestPrint();
+        else postIpc({ type: button.dataset.command });
+    });
+});
+renderTabs(true);
+notifyReady();
+</script>
+</body>
+</html>

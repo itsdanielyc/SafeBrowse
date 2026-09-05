@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement with a concrete use case.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem you want to solve. Please check existing issues first and avoid including private browsing information.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this help you do?
+      description: Explain the current difficulty and who it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested behavior
+      description: Describe how the improvement would work from the user's point of view.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and relevant limitations
+      description: Include workarounds you have tried and any privacy, accessibility or compatibility considerations.

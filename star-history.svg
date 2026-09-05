@@ -21,6 +21,6 @@
     <circle cx="480.00" cy="252.00" r="5" fill="#51dfc4" stroke="#101b21" stroke-width="2"/>
     <text x="480" y="278" fill="#91a9ad" font-size="12" text-anchor="middle">05 Sept 2026</text>
     
-    <text x="40" y="313" fill="#91a9ad" font-size="12">Daily UTC totals · Stars can rise or fall · Missed days are not backfilled</text>
+    <text x="40" y="313" fill="#91a9ad" font-size="12">Daily UTC totals</text>
   </g>
 </svg>

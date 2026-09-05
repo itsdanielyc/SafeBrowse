@@ -21,7 +21,7 @@ name = "safebrowse-maintenance"
 path = "src/bin/safebrowse-maintenance.rs"
 
 [dependencies]
-base64 = "0.22.1"
+base64 = "0.23.1"
 tao = "0.37.0"
 wry = "0.56.1"
 webview2-com = "0.38.2"

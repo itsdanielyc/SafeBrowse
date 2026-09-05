@@ -104,8 +104,13 @@ fn test_system_input_language_live() {
 fn test_system_battery_status_query() {
     use safebrowse::ui::assets::get_system_battery_status;
 
+    const UNKNOWN_BATTERY_PERCENTAGE: u8 = 255;
     let (icon, pct, _charging) = get_system_battery_status();
-    assert!(pct <= 100, "Battery percentage must be <= 100");
+    // Desktops and hosted Windows runners can legitimately have no battery reading.
+    assert!(
+        pct <= 100 || pct == UNKNOWN_BATTERY_PERCENTAGE,
+        "Battery percentage must be 0-100 or the documented unavailable sentinel"
+    );
     assert!(!icon.is_empty(), "Battery icon must not be empty");
 }
 

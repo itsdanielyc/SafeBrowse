@@ -1,4 +1,5 @@
 # Retain exact upstream license bytes used by the notice generator's digest checks.
+/Cargo.lock text eol=lf
 /docs/third-party/*.txt -text
 /THIRD_PARTY_NOTICES.txt -text
 

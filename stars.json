@@ -3,7 +3,7 @@
   "repository": "itsdanielyc/SafeBrowse",
   "repositoryCreatedAt": "2026-09-05T18:34:31Z",
   "trackingStartedAt": "2026-09-05T18:54:56.693Z",
-  "updatedAt": "2026-09-26T11:30:13.914Z",
+  "updatedAt": "2026-09-27T12:08:51.821Z",
   "samples": [
     {
       "date": "2026-09-05",
@@ -91,6 +91,10 @@
     },
     {
       "date": "2026-09-26",
+      "stars": 2
+    },
+    {
+      "date": "2026-09-27",
       "stars": 2
     }
   ]

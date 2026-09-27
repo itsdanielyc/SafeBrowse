@@ -24,7 +24,7 @@ path = "src/bin/safebrowse-maintenance.rs"
 base64 = "0.22.1"
 tao = "0.37.0"
 wry = "0.56.1"
-webview2-com = "0.38.2"
+webview2-com = "0.39.1"
 webview2-core = { package = "windows-core", version = "0.61.2" }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",

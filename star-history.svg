@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="336" viewBox="0 0 960 336" role="img" aria-labelledby="title description">
   <title id="title">itsdanielyc/SafeBrowse star history</title>
-  <desc id="description">2 stars observed on 2026-09-30 UTC. Tracking started 2026-09-05; 26 observed days. Missing days are not backfilled.</desc>
+  <desc id="description">2 stars observed on 2026-10-01 UTC. Tracking started 2026-09-05; 27 observed days. Missing days are not backfilled.</desc>
   <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#51dfc4" stop-opacity=".23"/><stop offset="1" stop-color="#51dfc4" stop-opacity="0"/></linearGradient></defs>
   <rect x="1" y="1" width="958" height="334" rx="22" fill="#101b21" stroke="#294048"/>
   <g font-family="Segoe UI,Arial,sans-serif">
@@ -10,18 +10,18 @@
     <text x="40" y="94" fill="#eefaf7" font-size="27" font-weight="700">Star history</text>
     <text x="40" y="119" fill="#a7b9bc" font-size="13">Tracking since 05 Sept 2026 · itsdanielyc/SafeBrowse</text>
     <text x="920" y="84" fill="#51dfc4" font-size="34" font-weight="700" text-anchor="end">2 stars</text>
-    <text x="920" y="111" fill="#a7b9bc" font-size="12" text-anchor="end">Latest observation · 30 Sept 2026 UTC</text>
+    <text x="920" y="111" fill="#a7b9bc" font-size="12" text-anchor="end">Latest observation · 01 Oct 2026 UTC</text>
     <path d="M64 252H896" stroke="#294048" stroke-dasharray="3 5"/>
     <text x="48" y="256" fill="#91a9ad" font-size="11" text-anchor="end">0</text>
     <path d="M64 197H896" stroke="#294048" stroke-dasharray="3 5"/>
     <text x="48" y="201" fill="#91a9ad" font-size="11" text-anchor="end">2</text>
     <path d="M64 142H896" stroke="#294048" stroke-dasharray="3 5"/>
     <text x="48" y="146" fill="#91a9ad" font-size="11" text-anchor="end">4</text>
-    <polygon points="64,252 64.00,252.00 97.28,252.00 130.56,197.00 163.84,197.00 197.12,197.00 230.40,197.00 263.68,197.00 296.96,197.00 330.24,197.00 363.52,197.00 396.80,197.00 430.08,197.00 463.36,197.00 496.64,197.00 529.92,197.00 563.20,197.00 596.48,197.00 629.76,197.00 663.04,197.00 696.32,197.00 729.60,197.00 762.88,197.00 796.16,197.00 829.44,197.00 862.72,197.00 896.00,197.00 896,252" fill="url(#area)"/>
-    <polyline points="64.00,252.00 97.28,252.00 130.56,197.00 163.84,197.00 197.12,197.00 230.40,197.00 263.68,197.00 296.96,197.00 330.24,197.00 363.52,197.00 396.80,197.00 430.08,197.00 463.36,197.00 496.64,197.00 529.92,197.00 563.20,197.00 596.48,197.00 629.76,197.00 663.04,197.00 696.32,197.00 729.60,197.00 762.88,197.00 796.16,197.00 829.44,197.00 862.72,197.00 896.00,197.00" fill="none" stroke="#51dfc4" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <polygon points="64,252 64.00,252.00 96.00,252.00 128.00,197.00 160.00,197.00 192.00,197.00 224.00,197.00 256.00,197.00 288.00,197.00 320.00,197.00 352.00,197.00 384.00,197.00 416.00,197.00 448.00,197.00 480.00,197.00 512.00,197.00 544.00,197.00 576.00,197.00 608.00,197.00 640.00,197.00 672.00,197.00 704.00,197.00 736.00,197.00 768.00,197.00 800.00,197.00 832.00,197.00 864.00,197.00 896.00,197.00 896,252" fill="url(#area)"/>
+    <polyline points="64.00,252.00 96.00,252.00 128.00,197.00 160.00,197.00 192.00,197.00 224.00,197.00 256.00,197.00 288.00,197.00 320.00,197.00 352.00,197.00 384.00,197.00 416.00,197.00 448.00,197.00 480.00,197.00 512.00,197.00 544.00,197.00 576.00,197.00 608.00,197.00 640.00,197.00 672.00,197.00 704.00,197.00 736.00,197.00 768.00,197.00 800.00,197.00 832.00,197.00 864.00,197.00 896.00,197.00" fill="none" stroke="#51dfc4" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="896.00" cy="197.00" r="5" fill="#51dfc4" stroke="#101b21" stroke-width="2"/>
     <text x="64" y="278" fill="#91a9ad" font-size="12" text-anchor="start">05 Sept 2026</text>
-    <text x="896" y="278" fill="#91a9ad" font-size="12" text-anchor="end">30 Sept 2026</text>
+    <text x="896" y="278" fill="#91a9ad" font-size="12" text-anchor="end">01 Oct 2026</text>
     <text x="40" y="313" fill="#91a9ad" font-size="12">Daily UTC totals</text>
   </g>
 </svg>
